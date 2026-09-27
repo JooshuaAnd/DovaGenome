@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "lf-dova_kitchen": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "uvx",
+        "mcp-proxy",
+        "--transport",
+        "streamablehttp",
+        "--headers",
+        "x-api-key",
+        "sk-icsStYjpZbmbkFTxsOPApv1yMH1qAKwSWijMrqjuFNM",
+        "http://127.0.0.1:7860/api/v1/mcp/project/09778e1b-f424-48e9-bf6d-36d8fb2cdb90/streamable"
+      ]
+    }
+  }
+}
