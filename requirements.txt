@@ -1,0 +1,4 @@
+astrapy
+pyTelegramBotAPI
+requests
+python-dotenv
