@@ -1,0 +1,86 @@
+{
+  "created_at": "2026-10-01T00:53:20.962555",
+  "reason": "Dokumen fixture dari skrip pengujian; katalog kanonik dipulihkan dari seed_catering_data.py",
+  "collections": {
+    "catering_packages": [
+      {
+        "_id": "ae3a1cba-7d84-47a7-ba1c-ba7d84e7a742",
+        "id": "pkg_3",
+        "nama": "3 Hari",
+        "caption": "",
+        "harga": 150000,
+        "perkiraan": "",
+        "features": [
+          "3x makan siang"
+        ],
+        "is_active": true
+      }
+    ],
+    "allergen_definitions": [
+      {
+        "_id": "54ddadfe-13cf-42bb-9dad-fe13cf92bb03",
+        "kode": "Bebas Kacang",
+        "level": "Mild",
+        "is_active": true,
+        "rekomendasi": "Hindari kacang tanah"
+      },
+      {
+        "_id": "9273d7cf-64af-4d50-b3d7-cf64af6d503b",
+        "kode": "Bebas Susu",
+        "level": "Moderate",
+        "is_active": true,
+        "rekomendasi": "Ganti santan dengan、豆奶"
+      },
+      {
+        "_id": "d37ae93a-717a-40a5-bae9-3a717a80a51b",
+        "kode": "Bebas Gluten",
+        "level": "Moderate",
+        "is_active": true,
+        "rekomendasi": "Ganti beras menjadi quinoa"
+      }
+    ],
+    "catering_menus": [
+      {
+        "_id": "f0ede5e7-1e0f-4b97-ade5-e71e0f8b977f",
+        "nama": "Nasi Ayam Bakar",
+        "deskripsi": "Nasi, ayam bakar, lalapan",
+        "harga": 35000,
+        "allergen": [
+          "Bebas Gluten"
+        ],
+        "is_active": true,
+        "cover_image": "cover-1.jpg"
+      },
+      {
+        "_id": "e399d5e9-4698-4a88-99d5-e946988a8895",
+        "nama": "Menu Tidak Aktif",
+        "deskripsi": "Tidak aktif",
+        "harga": 25000,
+        "allergen": [],
+        "is_active": false,
+        "cover_image": "cover-4.jpg"
+      },
+      {
+        "_id": "680bb4c6-e611-4a55-8bb4-c6e6112a55d0",
+        "nama": "Sayur Lodeh",
+        "deskripsi": "Sayur, santan",
+        "harga": 30000,
+        "allergen": [
+          "Bebas、乳",
+          "Bebas Susu"
+        ],
+        "is_active": true,
+        "cover_image": "cover-3.jpg"
+      },
+      {
+        "_id": "758934dd-1f3c-4e02-8934-dd1f3c6e026c",
+        "nama": "Mie Goreng Ayam",
+        "deskripsi": "Mie, ayam, sayur",
+        "harga": 32000,
+        "allergen": [],
+        "is_active": true,
+        "cover_image": "cover-2.jpg"
+      }
+    ]
+  }
+}

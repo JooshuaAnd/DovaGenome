@@ -2,3 +2,4 @@ astrapy
 pyTelegramBotAPI
 requests
 python-dotenv
+streamlit
