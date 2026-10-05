@@ -1,0 +1,412 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+   DovaGenome — Design Tokens
+   --------------------------------------------------------------------------
+   Derived from the Streamlit design reference (theme.py) and refined into a
+   cohesive product palette: warm neutral canvas, ONE confident forest accent,
+   gold restricted to secondary highlights, and a dedicated semantic safety
+   scale (safe / caution / blocked) because cross-contamination status is the
+   core domain concept of this product.
+
+   NOTE: raw token names are prefixed to avoid colliding with the shadcn/ui
+   semantic names below (e.g. `--muted` = shadcn surface tint, `--fg-muted`
+   = readable secondary text).
+   ========================================================================== */
+
+:root {
+  /* ── Warm neutral canvas ─────────────────────────────────────────────── */
+  --canvas: #fbf8f3; /* IVORY    #FBF8F3 */
+  --cream: #f4ede1; /* CREAM    #F4EDE1 */
+  --surface: #ffffff; /* SURFACE  #FFFFFF */
+  --sunken: #fffdf9;
+  --line: #e7dfd1; /* LINE     #E7DFD1 */
+  --line-strong: #d8ccb8;
+
+  /* ── Ink ─────────────────────────────────────────────────────────────── */
+  --fg-strong: #1b2a24; /* INK      #1B2A24 */
+  --fg: #41544c; /* INK_SOFT #41544C */
+  --fg-muted: #6e8078; /* MUTED    #6E8078 */
+  --fg-subtle: #93a29b;
+
+  /* ── Brand: forest (single confident accent) ─────────────────────────── */
+  --forest-950: #0c231d;
+  --forest-900: #12322a; /* FOREST_900 #12322A */
+  --forest-800: #174035;
+  --forest-700: #1f5648; /* FOREST_700 #1F5648 */
+  --forest-600: #2a7261; /* FOREST_600 #2A7261 */
+  --forest-500: #3c8c79;
+  --forest-300: #9cc4b8;
+  --forest-100: #dceae5; /* FOREST_100 #DCEAE5 */
+  --forest-50: #eff6f3; /* FOREST_50  #EFF6F3 */
+
+  /* ── Brand: gold (secondary highlight, used sparingly) ───────────────── */
+  --gold-700: #8a6a2b;
+  --gold-600: #b8893b; /* GOLD_600 #B8893B */
+  --gold-500: #cfa055; /* GOLD_500 #CFA055 */
+  --gold-200: #eedfbe;
+  --gold-50: #fbf3e3; /* GOLD_50 #FBF3E3 */
+
+  /* ── Brand: rose (demoted from accent to destructive) ────────────────── */
+  --rose-600: #c2415a; /* ROSE_600 #C2415A */
+  --rose-200: #f2cbd3;
+  --rose-50: #fdf1f3; /* ROSE_50 #FDF1F3 */
+
+  /* ── SEMANTIC SAFETY SCALE (core domain concept) ─────────────────────── */
+  --safety-safe: #15803d;
+  --safety-safe-strong: #166534;
+  --safety-safe-soft: #ebf7f0;
+  --safety-safe-line: #c6e7d3;
+
+  --safety-caution: #b45309;
+  --safety-caution-strong: #92400e;
+  --safety-caution-soft: #fdf4e3;
+  --safety-caution-line: #efdcb6;
+
+  --safety-blocked: #9f1239;
+  --safety-blocked-strong: #881337;
+  --safety-blocked-soft: #fdf1f3;
+  --safety-blocked-line: #f2cbd3;
+
+  /* ── Order status / information (kept to 5 controlled hues) ──────────── */
+  --status-neutral: #64748b;
+  --status-neutral-soft: #f1f5f9;
+  --status-neutral-line: #dce3eb;
+
+  --status-info: #1d4ed8;
+  --status-info-soft: #edf2fe;
+  --status-info-line: #cbdcF9;
+
+  /* ── Radii: theme.py used 11–18px; 12px base is the product decision ──── */
+  --radius: 0.75rem;
+
+  /* ── shadcn/ui semantic mapping ───────────────────────────────────────── */
+  --background: var(--canvas);
+  --foreground: var(--fg-strong);
+  --card: var(--surface);
+  --card-foreground: var(--fg-strong);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg-strong);
+  --primary: var(--forest-700);
+  --primary-foreground: #ffffff;
+  --secondary: var(--cream);
+  --secondary-foreground: var(--fg-strong);
+  --muted: #f6f1e7;
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--forest-50);
+  --accent-foreground: var(--forest-700);
+  --destructive: var(--safety-blocked);
+  --destructive-foreground: #ffffff;
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--forest-600);
+
+  --sidebar: var(--sunken);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--forest-700);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--forest-50);
+  --sidebar-accent-foreground: var(--forest-700);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--forest-600);
+}
+
+/* ── Dark palette — used by the high-contrast kitchen layout ────────────── */
+.dark {
+  --canvas: #0f1916;
+  --cream: #16231f;
+  --surface: #14211d;
+  --sunken: #101b18;
+  --line: #25332e;
+  --line-strong: #33443d;
+
+  --fg-strong: #eaf2ee;
+  --fg: #b9c9c2;
+  --fg-muted: #8b9d95;
+  --fg-subtle: #6d7e77;
+
+  --forest-950: #06110e;
+  --forest-900: #0c231d;
+  --forest-800: #12322a;
+  --forest-700: #1f5648;
+  --forest-600: #3c8c79;
+  --forest-500: #58a892;
+  --forest-300: #2f7f6c;
+  --forest-100: #1d3b33;
+  --forest-50: #182c26;
+
+  --gold-700: #d9b678;
+  --gold-600: #cfa055;
+  --gold-500: #e2bd7e;
+  --gold-200: #4a3d22;
+  --gold-50: #2e2717;
+
+  --safety-safe: #4ade80;
+  --safety-safe-strong: #86efac;
+  --safety-safe-soft: #12291d;
+  --safety-safe-line: #1f4a30;
+  --safety-caution: #fbbf24;
+  --safety-caution-strong: #fcd34d;
+  --safety-caution-soft: #2c2413;
+  --safety-caution-line: #4d3f1c;
+  --safety-blocked: #fb7185;
+  --safety-blocked-strong: #fda4af;
+  --safety-blocked-soft: #2e1219;
+  --safety-blocked-line: #5a1f2c;
+
+  --status-neutral: #94a3b8;
+  --status-neutral-soft: #1b242c;
+  --status-neutral-line: #2c3a44;
+  --status-info: #93c5fd;
+  --status-info-soft: #131f33;
+  --status-info-line: #22375a;
+
+  --background: var(--canvas);
+  --foreground: var(--fg-strong);
+  --card: var(--surface);
+  --card-foreground: var(--fg-strong);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg-strong);
+  --primary: var(--forest-500);
+  --primary-foreground: #06110e;
+  --secondary: var(--cream);
+  --secondary-foreground: var(--fg-strong);
+  --muted: var(--cream);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--forest-50);
+  --accent-foreground: var(--forest-300);
+  --destructive: #e0577b;
+  --destructive-foreground: #ffffff;
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--forest-500);
+
+  --sidebar: var(--sunken);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--forest-500);
+  --sidebar-primary-foreground: #06110e;
+  --sidebar-accent: var(--forest-50);
+  --sidebar-accent-foreground: var(--forest-300);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--forest-500);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-cream: var(--cream);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--fg-strong);
+  --color-ink-soft: var(--fg);
+  --color-muted-text: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+
+  --color-forest-950: var(--forest-950);
+  --color-forest-900: var(--forest-900);
+  --color-forest-800: var(--forest-800);
+  --color-forest-700: var(--forest-700);
+  --color-forest-600: var(--forest-600);
+  --color-forest-500: var(--forest-500);
+  --color-forest-300: var(--forest-300);
+  --color-forest-100: var(--forest-100);
+  --color-forest-50: var(--forest-50);
+
+  --color-gold-700: var(--gold-700);
+  --color-gold-600: var(--gold-600);
+  --color-gold-500: var(--gold-500);
+  --color-gold-200: var(--gold-200);
+  --color-gold-50: var(--gold-50);
+
+  --color-rose-600: var(--rose-600);
+  --color-rose-200: var(--rose-200);
+  --color-rose-50: var(--rose-50);
+
+  /* Semantic safety: safe / caution / blocked */
+  --color-safe: var(--safety-safe);
+  --color-safe-strong: var(--safety-safe-strong);
+  --color-safe-soft: var(--safety-safe-soft);
+  --color-safe-line: var(--safety-safe-line);
+
+  --color-caution: var(--safety-caution);
+  --color-caution-strong: var(--safety-caution-strong);
+  --color-caution-soft: var(--safety-caution-soft);
+  --color-caution-line: var(--safety-caution-line);
+
+  --color-blocked: var(--safety-blocked);
+  --color-blocked-strong: var(--safety-blocked-strong);
+  --color-blocked-soft: var(--safety-blocked-soft);
+  --color-blocked-line: var(--safety-blocked-line);
+
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-soft: var(--status-neutral-soft);
+  --color-status-neutral-line: var(--status-neutral-line);
+  --color-status-info: var(--status-info);
+  --color-status-info-soft: var(--status-info-soft);
+  --color-status-info-line: var(--status-info-line);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Typography: serif display for brand voice, sans for UI density. */
+  --font-display: Georgia, Cambria, 'Times New Roman', Times, serif;
+  --font-sans:
+    'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace;
+
+  /* Restrained elevation — hairline first, shadow second. */
+  --shadow-hairline: 0 1px 2px rgb(27 42 36 / 0.05);
+  --shadow-raised:
+    0 1px 2px rgb(27 42 36 / 0.04), 0 14px 28px -24px rgb(27 42 36 / 0.4);
+  --shadow-float:
+    0 2px 6px rgb(27 42 36 / 0.06), 0 18px 34px -22px rgb(27 42 36 / 0.4);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-fade-in: fade-in 0.25s ease-out;
+  --animate-rise-in: rise-in 0.35s ease-out both;
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/40;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-ink-soft antialiased;
+    /* One restrained warm wash, mirroring theme.py's radial glow without
+       turning every surface into a gradient. */
+    background-image:
+      radial-gradient(
+        1100px 460px at 100% -12%,
+        rgb(207 160 85 / 0.1),
+        transparent 62%
+      ),
+      radial-gradient(
+        820px 380px at -8% -4%,
+        rgb(42 114 97 / 0.08),
+        transparent 60%
+      );
+    background-attachment: fixed;
+  }
+
+  /* Strong hierarchy: serif display reserved for real headings. */
+  h1,
+  h2 {
+    @apply font-display font-bold tracking-[-0.015em] text-ink;
+  }
+
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-semibold tracking-[-0.01em] text-ink;
+  }
+
+  /* Kitchen layout: high contrast + large touch targets. */
+  [data-touch='lg'] button,
+  [data-touch='lg'] a,
+  [data-touch='lg'] [role='button'] {
+    min-height: 3rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Uppercase micro-label for eyebrows and table headers. */
+  .eyebrow {
+    @apply text-[0.6875rem] font-extrabold tracking-[0.18em] text-forest-600 uppercase;
+  }
+
+  .surface-card {
+    @apply rounded-xl border border-line bg-surface shadow-hairline;
+  }
+}

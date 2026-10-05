@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -37,6 +38,10 @@ import data as D
 
 load_dotenv()
 
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 
 def _required_env(name: str) -> str:
     value = os.getenv(name)
@@ -48,6 +53,11 @@ def _required_env(name: str) -> str:
 # Sembunyikan log error jaringan telebot di terminal
 telebot.logger.setLevel(logging.CRITICAL)
 log = logging.getLogger("dova.bot")
+
+telebot.apihelper.RETRY_ON_ERROR = True
+telebot.apihelper.RETRY_ENGINE = 1
+telebot.apihelper.MAX_RETRIES = 6
+telebot.apihelper.RETRY_TIMEOUT = 2
 
 # ---------------------------------------------------------------------------
 # Konfigurasi

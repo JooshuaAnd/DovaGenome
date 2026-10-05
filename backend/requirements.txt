@@ -1,0 +1,29 @@
+# Backend DovaGenome AI — Phase 2+
+# Dipisah dari root requirements.txt (yang masih dipakai Streamlit).
+# Install: python -m pip install -r backend/requirements.txt
+
+# ── Web framework ───────────────────────────────────────────────────────────
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# ── Konfigurasi & validasi ──────────────────────────────────────────────────
+pydantic>=2.7
+pydantic-settings>=2.3
+
+# ── Database ────────────────────────────────────────────────────────────────
+astrapy>=1.5
+
+# ── Integrasi eksternal ─────────────────────────────────────────────────────
+httpx>=0.27
+
+# ── Auth ────────────────────────────────────────────────────────────────────
+PyJWT>=2.8
+bcrypt>=4.1
+
+# ── Telegram (dipakai ulang oleh bot di Phase 6) ────────────────────────────
+pyTelegramBotAPI>=4.22
+APScheduler>=3.10
+
+# ── Test ────────────────────────────────────────────────────────────────────
+pytest>=8.0
