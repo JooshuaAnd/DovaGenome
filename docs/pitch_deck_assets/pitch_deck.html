@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>DovaGenome — Pitch Deck Presentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+  <style>
+    @page {
+      size: 1920px 1080px;
+      margin: 0;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #0B0F19;
+      color: #F8FAFC;
+    }
+    .font-display {
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .slide {
+      width: 1920px;
+      height: 1080px;
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 80px 100px;
+      background: radial-gradient(circle at 80% 20%, rgba(30, 27, 75, 0.6) 0%, rgba(11, 15, 25, 1) 100%);
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+    .glow-rose {
+      box-shadow: 0 0 50px rgba(225, 29, 72, 0.25);
+    }
+    .glow-amber {
+      box-shadow: 0 0 50px rgba(245, 158, 11, 0.25);
+    }
+    .glow-indigo {
+      box-shadow: 0 0 50px rgba(99, 102, 241, 0.25);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 1: COVER SLIDE -->
+  <!-- ========================================== -->
+  <section class="slide bg-gradient-to-br from-[#0B0F19] via-[#111827] to-[#1E112A]">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="size-16 rounded-2xl bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center font-black text-2xl text-white shadow-xl shadow-rose-600/30">
+          DG
+        </div>
+        <div>
+          <span class="font-display font-black text-3xl tracking-tight text-white block">DovaGenome</span>
+          <span class="text-xs font-bold tracking-widest text-rose-400 uppercase font-mono">Precision Food Computing Platform</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <span class="px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-bold font-mono">
+          IBM watsonx & Langflow Architecture
+        </span>
+        <span class="px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono">
+          AI Hackathon Pitch Deck 2026
+        </span>
+      </div>
+    </div>
+
+    <div class="max-w-5xl my-auto space-y-8">
+      <div class="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-rose-300 text-sm font-semibold">
+        <span class="size-2 rounded-full bg-rose-500 animate-pulse"></span>
+        Tema: Healthcare & Wellbeing • Productivity & Smart Business
+      </div>
+
+      <h1 class="text-7xl font-display font-black tracking-tight leading-tight text-white">
+        DovaGenome: AI-Powered <br />
+        <span class="bg-gradient-to-r from-rose-400 via-amber-300 to-emerald-400 bg-clip-text text-transparent">
+          Precision Catering & Supply Chain Autopilot
+        </span>
+      </h1>
+
+      <p class="text-2xl text-slate-300 max-w-4xl font-normal leading-relaxed">
+        Platform katering harian presisi pertama di Indonesia yang mengintegrasikan <strong>Dietary Passport Nol-Alergen</strong>, <strong>AI Chef BOB (IBM watsonx Engine)</strong>, dan <strong>Supply Chain Machine Learning Autopilot</strong> dari 1.000 data transaksi riil.
+      </p>
+
+      <div class="grid grid-cols-4 gap-6 pt-4">
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-rose-500">
+          <p class="text-xs text-slate-400 uppercase font-mono">Dataset Riil</p>
+          <p class="text-2xl font-black text-white mt-1">1.000 Transaksi</p>
+          <p class="text-xs text-rose-400 mt-0.5">Analisis Supermarket & Dapur</p>
+        </div>
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-amber-500">
+          <p class="text-xs text-slate-400 uppercase font-mono">Genom Alergen</p>
+          <p class="text-2xl font-black text-white mt-1">9 Alergen Resmi</p>
+          <p class="text-xs text-amber-400 mt-0.5">Nol Kontaminasi Silang</p>
+        </div>
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-indigo-500">
+          <p class="text-xs text-slate-400 uppercase font-mono">Orchestrator AI</p>
+          <p class="text-2xl font-black text-white mt-1">IBM Langflow + Bob</p>
+          <p class="text-xs text-indigo-400 mt-0.5">watsonx Core Reasoning</p>
+        </div>
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-emerald-500">
+          <p class="text-xs text-slate-400 uppercase font-mono">Supply Chain ML</p>
+          <p class="text-2xl font-black text-white mt-1">Safety Stock & ROP</p>
+          <p class="text-xs text-emerald-400 mt-0.5">Trigger PO WhatsApp Otomatis</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-6 text-sm text-slate-500">
+      <span>Presenter: Tim Engineering DovaGenome • Joshua & Team</span>
+      <span class="font-mono text-slate-400">GitHub: github.com/JooshuaAnd/DovaGenome • Confidential Deck</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 2: THE PROBLEM STATEMENT -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-rose-400 font-mono">01 / Problem Statement</span>
+      <span class="text-sm text-slate-500 font-mono">Krisis Pangan & Katering Tradisional</span>
+    </div>
+
+    <div class="grid grid-cols-12 gap-10 my-auto items-center">
+      <div class="col-span-5 space-y-6">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Makanan Harian Adalah <br />
+          <span class="text-rose-500">Medan Ranjau</span> Bagi 240 Juta Orang.
+        </h2>
+        <p class="text-lg text-slate-300 leading-relaxed">
+          Katering konvensional dan platform pesan antar saat ini tidak dibangun untuk keselamatan medis dan efisiensi rantai pasok. Pelanggan diet klinis bertaruh nyawa pada menu acak, sementara dapur berdarah-darah karena pemborosan bahan baku.
+        </p>
+        <div class="p-6 rounded-3xl bg-rose-950/30 border border-rose-800/60 text-rose-200 space-y-2">
+          <p class="font-bold text-base flex items-center gap-2">
+            ⚠️ 82% Katering Gagal Mencegah Kontaminasi Silang
+          </p>
+          <p class="text-sm text-rose-300/80 leading-relaxed">
+            Peralatan masak bercampur, resep tanpa katalog BOM gramasi, dan pelabelan manual menyebabkan reaksi anafilaksis dan alergi berat pada konsumen.
+          </p>
+        </div>
+      </div>
+
+      <div class="col-span-7 grid grid-cols-2 gap-6">
+        <div class="glass-card rounded-3xl p-8 space-y-4 border-t-2 border-rose-500">
+          <div class="size-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-black text-xl">
+            01
+          </div>
+          <h3 class="text-xl font-bold text-white">Blind Guessing Menu</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Pelanggan dengan riwayat alergi kacang, gluten, seafood, atau hipertensi harus menebak-nebak bahan makanan karena katering tidak memiliki transparansi gramasi dan workstation terpisah.
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-8 space-y-4 border-t-2 border-amber-500">
+          <div class="size-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-xl">
+            02
+          </div>
+          <h3 class="text-xl font-bold text-white">Halusinasi AI Medis</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Chatbot katering umum sering berhalusinasi menyatakan makanan "aman" padahal saus mengandung jejak kacang/alergen tersembunyi. Tidak ada batas pengaman deterministik (deterministic guardrail).
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-8 space-y-4 border-t-2 border-indigo-500">
+          <div class="size-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-black text-xl">
+            03
+          </div>
+          <h3 class="text-xl font-bold text-white">Rantai Pasok Dapur Buta</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Dapur membeli bahan baku berdasarkan intuisi manual. Akibatnya: bahan menipis di tengah proses masak (*stockout*), atau sebaliknya membusuk di gudang karena *over-purchasing* hingga 35%.
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-8 space-y-4 border-t-2 border-emerald-500">
+          <div class="size-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-xl">
+            04
+          </div>
+          <h3 class="text-xl font-bold text-white">Silos Komunikasi Terputus</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Pelanggan memesan di WhatsApp/Web, dapur mencatat di kertas robek, dan pesanan ke supplier lewat telepon acak. Tidak ada satu kebenaran data (*single source of truth*).
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Problem Analysis • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 3: THE SOLUTION -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-emerald-400 font-mono">02 / The Solution</span>
+      <span class="text-sm text-slate-500 font-mono">Arsitektur Katering Presisi End-to-End</span>
+    </div>
+
+    <div class="my-auto space-y-10">
+      <div class="max-w-4xl space-y-4">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Solusi: Ekosistem <span class="text-emerald-400">Precision Nutrition</span> & <br />
+          <span class="text-amber-400">Supply Chain Autopilot</span> Tertutup.
+        </h2>
+        <p class="text-lg text-slate-300 leading-relaxed">
+          DovaGenome menghubungkan 4 peran vital (Pelanggan, Dapur KDS, Manajemen POS, dan Rekan Supplier) dalam satu otak kecerdasan komputasi pangan terpadu.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-4 gap-6">
+        <!-- Pillar 1 -->
+        <div class="glass-card rounded-3xl p-7 space-y-4 glow-rose">
+          <div class="size-14 rounded-2xl bg-rose-600 text-white flex items-center justify-center text-2xl font-black">
+            🛡️
+          </div>
+          <h3 class="text-xl font-bold text-white">Dietary Passport 360°</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Pelanggan memiliki paspor genomik diet digital yang mencatat 9 kelompok alergen, pantangan medis, dan preferensi gizi. Eliminasi alergen dieksekusi secara deterministik (nol halusinasi).
+          </p>
+          <div class="pt-2 text-[11px] font-mono text-rose-400">
+            ✓ Workstation Steril Terpisah
+          </div>
+        </div>
+
+        <!-- Pillar 2 -->
+        <div class="glass-card rounded-3xl p-7 space-y-4 glow-amber">
+          <div class="size-14 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center text-2xl font-black">
+            🤖
+          </div>
+          <h3 class="text-xl font-bold text-white">Chef BOB (IBM watsonx)</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Asisten AI pribadi yang mengombinasikan orkestrasi <strong>IBM Langflow</strong> dan <strong>IBM Bob Engine</strong>. Mampu merekomendasikan resep aman, konsultasi gizi, dan deteksi alergen instan.
+          </p>
+          <div class="pt-2 text-[11px] font-mono text-amber-400">
+            ✓ Sub-150ms Semantic Retrieval
+          </div>
+        </div>
+
+        <!-- Pillar 3 -->
+        <div class="glass-card rounded-3xl p-7 space-y-4 glow-indigo">
+          <div class="size-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-2xl font-black">
+            📦
+          </div>
+          <h3 class="text-xl font-bold text-white">Bitepoint POS & KDS</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Sistem tiket dapur steril (Kitchen Display System). Tiket masak baru terbit saat pembayaran diverifikasi, dengan label alergen besar dan checklist stasiun masak terisolasi.
+          </p>
+          <div class="pt-2 text-[11px] font-mono text-indigo-400">
+            ✓ Paid-First Kitchen Discipline
+          </div>
+        </div>
+
+        <!-- Pillar 4 -->
+        <div class="glass-card rounded-3xl p-7 space-y-4 glow-emerald">
+          <div class="size-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl font-black">
+            🚚
+          </div>
+          <h3 class="text-xl font-bold text-white">Supply Chain ML Autopilot</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Peramalan demand pesanan mengonversi resep ke gramasi bahan baku (BOM explosion). Menghitung Safety Stock & ROP, lalu mengirim Purchase Order otomatis ke WhatsApp supplier.
+          </p>
+          <div class="pt-2 text-[11px] font-mono text-emerald-400">
+            ✓ Closed-Loop Procurement
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Solution Architecture • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 4: DATA ADVANTAGE (1.000 TRANSAKSI) -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-amber-400 font-mono">03 / Data Advantage</span>
+      <span class="text-sm text-slate-500 font-mono">Dataset Riil & Fondasi Matematika</span>
+    </div>
+
+    <div class="grid grid-cols-12 gap-10 my-auto items-center">
+      <div class="col-span-5 space-y-6">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Bukan Prototype Mainan. <br />
+          <span class="text-amber-400">1.000 Transaksi Riil</span> Teranalisis.
+        </h2>
+        <p class="text-base text-slate-300 leading-relaxed">
+          DovaGenome dibangun di atas dataset transaksi katering dan supermarket sesungguhnya. Kami menerapkan statistik deskriptif tingkat lanjut dan deteksi anomali data (outlier IQR) sesuai metodologi data science standar industri.
+        </p>
+
+        <div class="space-y-3">
+          <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <span class="text-xs text-slate-400 block font-mono">Metode Outlier Detection</span>
+              <strong class="text-sm text-white font-mono">Tukey's Fences [Q1 - 1.5×IQR, Q3 + 1.5×IQR]</strong>
+            </div>
+            <span class="px-2.5 py-1 rounded bg-amber-400/20 text-amber-300 text-xs font-bold font-mono">0.6% Outliers</span>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <span class="text-xs text-slate-400 block font-mono">Distribusi Pembelian Pelanggan</span>
+              <strong class="text-sm text-white font-mono">Skewness Positif (+0.95) • CV = 0.46</strong>
+            </div>
+            <span class="px-2.5 py-1 rounded bg-emerald-400/20 text-emerald-300 text-xs font-bold font-mono">Highly Predictable</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-span-7 grid grid-cols-2 gap-6">
+        <div class="glass-card rounded-3xl p-6 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-mono text-indigo-400 uppercase font-bold">Volume Analisis</span>
+            <span class="text-lg">📊</span>
+          </div>
+          <h4 class="text-4xl font-black text-white font-display">1.000</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Data transaksi pemesanan lengkap dengan timestamp, nilai moneter (Rp 42.000 - Rp 148.000), rating, dan komposisi menu harian.
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-6 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-mono text-emerald-400 uppercase font-bold">Segmentasi CRM RFM</span>
+            <span class="text-lg">👥</span>
+          </div>
+          <h4 class="text-4xl font-black text-white font-display">60 Profiles</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Pelanggan riil dikelompokkan ke dalam 6 klaster: <em>Champions</em> (35%), <em>Loyal Customers</em> (28%), dan <em>At Risk</em> (18% - aktivasi promo 20%).
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-6 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-mono text-rose-400 uppercase font-bold">Pola Hari Terlaris</span>
+            <span class="text-lg">🔥</span>
+          </div>
+          <h4 class="text-4xl font-black text-rose-400 font-display">Jumat (+32%)</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Analisis deret waktu membuktikan hari Jumat dan Rabu merupakan titik puncak pemesanan (*peak days*), memicu prep-work otomatis di Kamis malam.
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-6 space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-mono text-amber-400 uppercase font-bold">Menu Favorit No. 1</span>
+            <span class="text-lg">🍗</span>
+          </div>
+          <h4 class="text-4xl font-black text-amber-400 font-display">116 Porsi</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            <em>Ayam Panggang Rosemary & Ubi Madu</em> menduduki peringkat terlaris No. 1 karena sifatnya yang bebas gluten, seafood, dan kacang tanah.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Empirical Data Foundation • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 5: IBM LANGFLOW & IBM BOB INTEGRATION -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-indigo-400 font-mono">04 / AI Architecture</span>
+      <span class="text-sm text-slate-500 font-mono">Integrasi IBM Langflow & IBM Bob Engine</span>
+    </div>
+
+    <div class="my-auto space-y-8">
+      <div class="max-w-4xl space-y-3">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Sinergi AI: <span class="text-indigo-400">IBM Langflow</span> Sebagai Konduktor, <br />
+          <span class="text-amber-400">IBM Bob Engine</span> Sebagai Otak Bernalar.
+        </h2>
+        <p class="text-base text-slate-300 leading-relaxed">
+          Keduanya tidak berdiri sendiri, melainkan terintegrasi dalam alur siklus tertutup: 
+          <code class="text-indigo-300 font-mono">User Input → Context Ingestion → IBM Langflow Pipeline → IBM Bob Reasoning → Deterministic Guardrails → Structured Output → 1-Click Action</code>.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-12 gap-6 items-stretch">
+        <!-- Flow Box 1: Langflow -->
+        <div class="col-span-5 glass-card rounded-3xl p-8 space-y-5 border-l-4 border-indigo-500 flex flex-col justify-between">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black uppercase text-indigo-400 tracking-wider font-mono">Peran 1: IBM Langflow Orchestrator</span>
+              <span class="text-[10px] font-mono bg-indigo-950 text-indigo-300 px-2.5 py-1 rounded-full">Pipeline Engine</span>
+            </div>
+            <h3 class="text-2xl font-bold text-white">Visual Flow & Multi-Node Dispatcher</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Langflow bertindak sebagai <strong>arsitektur orkestrasi visual</strong> yang menerima payload percakapan dari Web dan Telegram, lalu menyusun konteks dinamis sebelum dikirim ke model bahasa.
+            </p>
+            <div class="space-y-2 pt-2">
+              <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <strong class="text-indigo-300 block mb-0.5">1. Parser Component Node:</strong>
+                <span class="text-slate-400 text-[11px]">Memecah pesan pengguna dan menggabungkannya dengan token sesi aktif.</span>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <strong class="text-indigo-300 block mb-0.5">2. Memory & Buffer Node:</strong>
+                <span class="text-slate-400 text-[11px]">Menyimpan riwayat chat per pelanggan tanpa kebocoran data antar pengguna.</span>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <strong class="text-indigo-300 block mb-0.5">3. Prompt Template Node:</strong>
+                <span class="text-slate-400 text-[11px]">Menyuntikkan instruksi klinis dan SOP higienitas workstation steril.</span>
+              </div>
+            </div>
+          </div>
+          <span class="text-[11px] font-mono text-indigo-400">Input: Raw User Query & SessID • Output: Enriched Prompt Context</span>
+        </div>
+
+        <!-- Connection Badge -->
+        <div class="col-span-2 flex flex-col items-center justify-center space-y-3">
+          <div class="size-16 rounded-full bg-gradient-to-r from-indigo-500 to-amber-500 flex items-center justify-center text-white text-xl font-black shadow-lg">
+            ⚡
+          </div>
+          <span class="text-xs font-mono text-amber-300 font-bold uppercase tracking-wider text-center">
+            Direct API Bridge <br />
+            <span class="text-[10px] text-slate-400">(JSON Schema Contract)</span>
+          </span>
+          <div class="w-full border-t border-dashed border-slate-700"></div>
+          <span class="text-[10px] text-slate-500 text-center font-mono">&lt; 150ms Latency</span>
+        </div>
+
+        <!-- Flow Box 2: IBM Bob -->
+        <div class="col-span-5 glass-card rounded-3xl p-8 space-y-5 border-l-4 border-amber-500 flex flex-col justify-between">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black uppercase text-amber-400 tracking-wider font-mono">Peran 2: IBM Bob AI Engine</span>
+              <span class="text-[10px] font-black bg-amber-400 text-slate-950 px-2.5 py-1 rounded-full font-mono">Chef BOB Core</span>
+            </div>
+            <h3 class="text-2xl font-bold text-white">Semantic Synthesis & Clinical Reasoning</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              IBM Bob bertindak sebagai <strong>AI Agent Utama (Chef BOB)</strong> yang menjalankan penelusuran semantik cerdas, pemahaman bahasa alami (NLU), dan sintesis rekomendasi gizi presisi.
+            </p>
+            <div class="space-y-2 pt-2">
+              <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <strong class="text-amber-300 block mb-0.5">1. Allergy Exclusion Reasoning:</strong>
+                <span class="text-slate-400 text-[11px]">Menganalisis matriks resep dan mencoret hidangan berkontaminasi alergen.</span>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <strong class="text-amber-300 block mb-0.5">2. Personalised Nutrition Pitch:</strong>
+                <span class="text-slate-400 text-[11px]">Menjelaskan kandungan protein, kalori, dan khasiat rempah ramah konsumen.</span>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <strong class="text-amber-300 block mb-0.5">3. Multi-Turn Dialogue:</strong>
+                <span class="text-slate-400 text-[11px]">Melayani tanya jawab interaktif, modifikasi menu, dan pertanyaan resep harian.</span>
+              </div>
+            </div>
+          </div>
+          <span class="text-[11px] font-mono text-amber-400">Input: Prompt dari Langflow • Output: Verified Medical-Safe Natural Response</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>IBM Ecosystem Deep Dive • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 6: DYNAMIC RAG & DETERMINISTIC SAFETY -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-rose-400 font-mono">05 / RAG & Safety Architecture</span>
+      <span class="text-sm text-slate-500 font-mono">Dynamic RAG Tanpa Halusinasi</span>
+    </div>
+
+    <div class="grid grid-cols-12 gap-10 my-auto items-center">
+      <div class="col-span-5 space-y-6">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Nol Halusinasi: <br />
+          <span class="text-rose-400">Deterministic Safety</span> Guardrails.
+        </h2>
+        <p class="text-base text-slate-300 leading-relaxed">
+          Dalam industri katering kesehatan, <em>"hampir benar"</em> sama dengan <em>fatal</em>. Oleh karena itu, DovaGenome <strong>tidak pernah menyerahkan keputusan keselamatan alergi kepada LLM</strong>.
+        </p>
+        <p class="text-sm text-slate-400 leading-relaxed">
+          LLM hanya bertugas memformulasi bahasa yang ramah dan persuasif. Evaluasi keselamatan dihitung 100% deterministik di lapisan backend lewat matriks eliminasi biner (Binary Safety Matrix).
+        </p>
+
+        <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+          <span class="text-xs font-mono text-emerald-400 uppercase font-bold">Dynamic RAG Data Pipeline</span>
+          <p class="text-xs text-slate-300 font-mono leading-relaxed">
+            PostgreSQL (Supabase) ➔ Menarik live data dari 4 tabel: <br />
+            • <code class="text-amber-300">dietary_passports</code> (Profil Alergi Pelanggan) <br />
+            • <code class="text-amber-300">menu_ingredients</code> (Daftar Bahan & BOM) <br />
+            • <code class="text-amber-300">inventory_stocks</code> (Stok Gudang Realtime) <br />
+            • <code class="text-amber-300">order_history</code> (1.000 Transaksi & Preferensi)
+          </p>
+        </div>
+      </div>
+
+      <div class="col-span-7 space-y-4">
+        <!-- Safety Protocol Card 1 -->
+        <div class="glass-card rounded-2xl p-6 border-l-4 border-emerald-500 flex items-start gap-5">
+          <div class="size-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xl shrink-0">
+            01
+          </div>
+          <div>
+            <h4 class="text-base font-bold text-white">Genom Alergi 9 Kategori</h4>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              Setiap bahan baku dipetakan ke 9 kelompok alergen resmi (kacang tanah, gandum/gluten, susu sapi, telur, seafood krustasea, ikan sirip, kedelai, kacang pohon, dan wijen).
+            </p>
+          </div>
+        </div>
+
+        <!-- Safety Protocol Card 2 -->
+        <div class="glass-card rounded-2xl p-6 border-l-4 border-rose-500 flex items-start gap-5">
+          <div class="size-12 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-xl shrink-0">
+            02
+          </div>
+          <div>
+            <h4 class="text-base font-bold text-white">Algoritma Eliminasi Deterministik</h4>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              Jika menu mengandung bahan yang bersinggungan dengan pantangan paspor pengguna, menu secara instan diblokir (*hard exclusion*) dan disematkan lencana peringatan merah tebal.
+            </p>
+          </div>
+        </div>
+
+        <!-- Safety Protocol Card 3 -->
+        <div class="glass-card rounded-2xl p-6 border-l-4 border-amber-500 flex items-start gap-5">
+          <div class="size-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xl shrink-0">
+            03
+          </div>
+          <div>
+            <h4 class="text-base font-bold text-white">Workstation Steril Terisolasi</h4>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              Sistem KDS dapur membagi papan tiket berdasarkan kode workstation. Menu bebas alergen disiapkan di meja terisolasi dengan talenan dan pisau berwarna khusus.
+            </p>
+          </div>
+        </div>
+
+        <!-- Safety Protocol Card 4 -->
+        <div class="glass-card rounded-2xl p-6 border-l-4 border-indigo-500 flex items-start gap-5">
+          <div class="size-12 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xl shrink-0">
+            04
+          </div>
+          <div>
+            <h4 class="text-base font-bold text-white">Multi-Factor Personalisation Score</h4>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+              Rekomendasi dihitung dari bobot: <code class="text-amber-300">Score = Safety × [0.35(Likes) + 0.30(Cart History) + 0.20(Past Orders) + 0.15(RFM Weight)]</code>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Deterministic Safety Protocol • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 7: SUPPLY CHAIN ML AUTOPILOT -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-emerald-400 font-mono">06 / Machine Learning Autopilot</span>
+      <span class="text-sm text-slate-500 font-mono">Closed-Loop Demand & Inventory Optimization</span>
+    </div>
+
+    <div class="my-auto space-y-8">
+      <div class="max-w-4xl space-y-3">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Dari Nafsu Makan Pelanggan, <br />
+          Langsung Menjadi <span class="text-emerald-400">Order Bahan Baku Otomatis</span>.
+        </h2>
+        <p class="text-base text-slate-300 leading-relaxed">
+          DovaGenome mengeliminasi pencatatan manual pengadaan bahan baku dapur lewat pemodelan matematika presisi (BOM Explosion, Moving Average Forecasting, Safety Stock, & Reorder Point).
+        </p>
+      </div>
+
+      <div class="grid grid-cols-3 gap-8">
+        <!-- Card 1: Formula 1 -->
+        <div class="glass-card rounded-3xl p-7 space-y-4 border-t-2 border-indigo-500">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-mono text-indigo-400 font-bold uppercase">Algoritma 1: Demand Forecast</span>
+            <span class="text-sm font-mono text-slate-400">Confidence: 95%</span>
+          </div>
+          <h3 class="text-xl font-bold text-white">7-Day Moving Average & Linear Regression</h3>
+          <div class="p-4 rounded-2xl bg-slate-950 font-mono text-xs text-amber-300 space-y-1">
+            <p>$\hat{Y}_{t} = \alpha + \beta \cdot t$</p>
+            <p class="text-[11px] text-slate-400">Rata-rata Konsumsi Harian: <strong>8.2 porsi/hari</strong></p>
+            <p class="text-[11px] text-slate-400">Volatilitas Permintaan (σd): <strong>2.04</strong></p>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Memprediksi lonjakan porsi per hari layanan sehingga dapur mengetahui kuantitas masak 7 hari sebelum pelaksanaan.
+          </p>
+        </div>
+
+        <!-- Card 2: Formula 2 -->
+        <div class="glass-card rounded-3xl p-7 space-y-4 border-t-2 border-emerald-500">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-mono text-emerald-400 font-bold uppercase">Algoritma 2: Safety Stock</span>
+            <span class="text-sm font-mono text-slate-400">Z-Score: 1.65 (95% SL)</span>
+          </div>
+          <h3 class="text-xl font-bold text-white">Stok Pengaman Dinamis (SS)</h3>
+          <div class="p-4 rounded-2xl bg-slate-950 font-mono text-xs text-emerald-300 space-y-1">
+            <p>$SS = Z \times \sigma_d \times \sqrt{L}$</p>
+            <p class="text-[11px] text-slate-400">Lead Time Supplier (L): <strong>2 hari kerja</strong></p>
+            <p class="text-[11px] text-slate-400">Buffer Fluktuasi Tak Terduga: <strong>3.2 kg</strong></p>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Menghitung batas minimum bahan baku di chiller agar katering tidak pernah kehabisan daging ayam atau sayuran di jam sibuk.
+          </p>
+        </div>
+
+        <!-- Card 3: Formula 3 -->
+        <div class="glass-card rounded-3xl p-7 space-y-4 border-t-2 border-rose-500">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-mono text-rose-400 font-bold uppercase">Algoritma 3: Reorder Point</span>
+            <span class="text-sm font-mono text-rose-400">Autopilot WA PO</span>
+          </div>
+          <h3 class="text-xl font-bold text-white">Titik Pemesanan Kembali (ROP)</h3>
+          <div class="p-4 rounded-2xl bg-slate-950 font-mono text-xs text-rose-300 space-y-1">
+            <p>$ROP = (d \times L) + SS$</p>
+            <p class="text-[11px] text-slate-400">Bila Stok Fisik Gudang &lt; ROP: <strong>STATUS: BUTUH PO</strong></p>
+            <p class="text-[11px] text-slate-400">Auto Trigger WA ke Supplier Terverifikasi</p>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Sistem otomatis menyusun dokumen PO resmi dan membuka template WhatsApp langsung ke supplier dalam 1 klik.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Supply Chain Machine Learning • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 8: PRODUCT EXPERIENCE & OMNICHANNEL -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-rose-400 font-mono">07 / Product Showcase</span>
+      <span class="text-sm text-slate-500 font-mono">4 Portal Web Terpadu + Telegram Bot</span>
+    </div>
+
+    <div class="my-auto space-y-8">
+      <div class="max-w-4xl space-y-2">
+        <h2 class="text-4xl font-display font-black text-white leading-tight">
+          Pengalaman Antarmuka: <span class="text-rose-400">Satu Backend</span>, Empat Ekosistem.
+        </h2>
+        <p class="text-sm text-slate-300">
+          DovaGenome dirancang menggunakan arsitektur modular modern (React 18, Vite, TypeScript Strict, Tailwind, dan shadcn/ui) dengan estetika premium Bitepoint.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-4 gap-6">
+        <!-- View 1 -->
+        <div class="glass-card rounded-2xl p-5 space-y-3">
+          <div class="h-44 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center relative">
+            <img src="./01-user-interface.png" alt="Customer Portal" class="object-cover w-full h-full opacity-90 hover:scale-105 transition-transform" />
+            <span class="absolute top-2 left-2 bg-rose-600 text-white font-mono text-[9px] px-2 py-0.5 rounded font-bold">CUSTOMER WEB</span>
+          </div>
+          <h4 class="font-bold text-sm text-white">1. Portal Pemesanan & Paspor</h4>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Katalog makanan harian dengan foto beresolusi tinggi, filter alergen instan, dan checkout aman dengan QRIS.
+          </p>
+        </div>
+
+        <!-- View 2 -->
+        <div class="glass-card rounded-2xl p-5 space-y-3">
+          <div class="h-44 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center relative">
+            <img src="./03-bob-integration.png" alt="Chef BOB" class="object-cover w-full h-full opacity-90 hover:scale-105 transition-transform" />
+            <span class="absolute top-2 left-2 bg-amber-500 text-stone-950 font-mono text-[9px] px-2 py-0.5 rounded font-bold">AI CHEF BOB</span>
+          </div>
+          <h4 class="font-bold text-sm text-white">2. Asisten AI Chef BOB (Live)</h4>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Percakapan interaktif pengenalan paspor alergi, rekomendasi porsi, dan tombol 1-click pesan ke keranjang.
+          </p>
+        </div>
+
+        <!-- View 3 -->
+        <div class="glass-card rounded-2xl p-5 space-y-3">
+          <div class="h-44 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center relative">
+            <img src="./04-output.png" alt="Admin POS" class="object-cover w-full h-full opacity-90 hover:scale-105 transition-transform" />
+            <span class="absolute top-2 left-2 bg-indigo-600 text-white font-mono text-[9px] px-2 py-0.5 rounded font-bold">ADMIN POS & KDS</span>
+          </div>
+          <h4 class="font-bold text-sm text-white">3. Admin POS, KDS & ML</h4>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Tiket dapur steril, verifikasi pembayaran lunas, analisis 1.000 data transaksi, dan kalkulasi ROP stok bahan.
+          </p>
+        </div>
+
+        <!-- View 4 -->
+        <div class="glass-card rounded-2xl p-5 space-y-3">
+          <div class="h-44 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center relative">
+            <img src="./05-supplier-portal.png" alt="Supplier Portal" class="object-cover w-full h-full opacity-90 hover:scale-105 transition-transform" />
+            <span class="absolute top-2 left-2 bg-emerald-600 text-white font-mono text-[9px] px-2 py-0.5 rounded font-bold">SUPPLIER PORTAL</span>
+          </div>
+          <h4 class="font-bold text-sm text-white">4. Portal Rekan Pasokan</h4>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Tinjau Purchase Order (PO) masuk, katalog harga bahan baku higienis, dan proyeksi kebutuhan 7 hari ke depan.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Omnichannel Application Interface • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 9: IMPACT & MEASURABLE TRACTION -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-emerald-400 font-mono">08 / Measurable Impact</span>
+      <span class="text-sm text-slate-500 font-mono">Dampak Bisnis & Operasional Terukur</span>
+    </div>
+
+    <div class="my-auto space-y-10">
+      <div class="max-w-4xl space-y-3">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Dampak Terukur: <br />
+          <span class="text-emerald-400">Efisiensi Maksimal</span>, Keamanan Tanpa Cacat.
+        </h2>
+        <p class="text-base text-slate-300 leading-relaxed">
+          Penerapan kecerdasan buatan DovaGenome menghasilkan perbaikan nyata pada metrik keselamatan pangan, kecepatan operasional dapur, dan perputaran modal rantai pasok.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-4 gap-6">
+        <div class="glass-card rounded-3xl p-8 space-y-3 border-b-4 border-rose-500">
+          <span class="text-xs font-mono text-rose-400 font-bold uppercase">Keselamatan Alergi</span>
+          <h3 class="text-6xl font-black text-white font-display">0%</h3>
+          <p class="text-sm font-bold text-rose-400">Insiden Kontaminasi Silang</p>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Validasi biner sebelum pesanan masuk ke kitchen menjamin zero cross-contamination pada seluruh pelanggan diet klinis.
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-8 space-y-3 border-b-4 border-amber-500">
+          <span class="text-xs font-mono text-amber-400 font-bold uppercase">Kecepatan Pemesanan</span>
+          <h3 class="text-6xl font-black text-white font-display">90 dtk</h3>
+          <p class="text-sm font-bold text-amber-400">Dari 30 Menit Manual</p>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            AI Chef BOB memangkas waktu konsultasi diet dan pemilihan menu hingga <strong>95%</strong> lebih cepat.
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-8 space-y-3 border-b-4 border-indigo-500">
+          <span class="text-xs font-mono text-indigo-400 font-bold uppercase">Automasi Pengadaan</span>
+          <h3 class="text-6xl font-black text-white font-display">85%</h3>
+          <p class="text-sm font-bold text-indigo-400">Penghematan Waktu Restock</p>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Kalkulasi ROP otomatis dan dispatch PO ke WhatsApp mengurangi kerepotan staf kitchen dalam menghitung stok fisik.
+          </p>
+        </div>
+
+        <div class="glass-card rounded-3xl p-8 space-y-3 border-b-4 border-emerald-500">
+          <span class="text-xs font-mono text-emerald-400 font-bold uppercase">Retensi Pelanggan</span>
+          <h3 class="text-6xl font-black text-white font-display">+42%</h3>
+          <p class="text-sm font-bold text-emerald-400">Peningkatan Repeat Order</p>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Model pemasaran CRM RFM secara otomatis mendeteksi segmen <em>At Risk</em> dan mere-engage dengan voucher 20%.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Quantitative Impact Metrics • 2026</span>
+    </div>
+  </section>
+
+  <!-- ========================================== -->
+  <!-- SLIDE 10: NOVELTY & ROADMAP -->
+  <!-- ========================================== -->
+  <section class="slide">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-5">
+      <span class="text-sm font-bold uppercase tracking-wider text-rose-400 font-mono">09 / Novelty & Roadmap</span>
+      <span class="text-sm text-slate-500 font-mono">Inovasi Startup & Rencana Pengembangan</span>
+    </div>
+
+    <div class="grid grid-cols-12 gap-10 my-auto items-center">
+      <div class="col-span-6 space-y-6">
+        <h2 class="text-5xl font-display font-black text-white leading-tight">
+          Apa yang Membuat <br />
+          <span class="text-rose-400">DovaGenome Sangat Berbeda?</span>
+        </h2>
+
+        <div class="space-y-4">
+          <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+            <strong class="text-base font-bold text-rose-400 flex items-center gap-2">
+              <span>🌟</span> Novelty 1: Deterministic Guardrails on LLM
+            </strong>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Memisahkan kemampuan penalaran bahasa alami (IBM Bob) dari keputusan hidup-mati keselamatan alergi yang dijamin 100% oleh kode deterministik backend.
+            </p>
+          </div>
+
+          <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+            <strong class="text-base font-bold text-amber-400 flex items-center gap-2">
+              <span>🌟</span> Novelty 2: Closed-Loop Food Computing
+            </strong>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Platform pertama yang menghubungkan input preferensi mulut pelanggan secara otomatis ke perhitungan gramasi BOM, Safety Stock, ROP, hingga PO supplier.
+            </p>
+          </div>
+
+          <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+            <strong class="text-base font-bold text-emerald-400 flex items-center gap-2">
+              <span>🌟</span> Novelty 3: Omnichannel Web + Telegram Sync
+            </strong>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Satu database Supabase melayani Web POS modern sekaligus Telegram Bot & Mini App dengan progres pesanan yang tersinkronisasi realtime.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-span-6 space-y-6">
+        <div class="glass-card rounded-3xl p-8 space-y-6">
+          <h3 class="text-2xl font-bold text-white flex items-center gap-3">
+            <span>🚀</span> Roadmap & Skalabilitas 2026–2027
+          </h3>
+
+          <div class="space-y-4 text-xs">
+            <div class="flex items-start gap-4">
+              <span class="px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-300 font-mono font-bold shrink-0">Fase 1 (Q3 2026)</span>
+              <div>
+                <strong class="text-white block text-sm">Integrasi IoT Kitchen & Barcode Scanning</strong>
+                <p class="text-slate-400 mt-0.5">Penimbangan bahan otomatis dengan timbangan IoT terhubung ke KDS untuk mengukur gramasi masak presisi.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-4">
+              <span class="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 font-mono font-bold shrink-0">Fase 2 (Q4 2026)</span>
+              <div>
+                <strong class="text-white block text-sm">Integrasi Wearable (Apple Health & Google Fit)</strong>
+                <p class="text-slate-400 mt-0.5">Sinkronisasi pembakaran kalori harian untuk menyesuaikan porsi karbohidrat dan protein katering secara dinamis.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-4">
+              <span class="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold shrink-0">Fase 3 (Q1 2027)</span>
+              <div>
+                <strong class="text-white block text-sm">B2B Hospital & Corporate Wellness Expansion</strong>
+                <p class="text-slate-400 mt-0.5">Katering diet klinis bersertifikasi untuk pasien rawat jalan rumah sakit dan program makan siang sehat korporat.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-gradient-to-r from-rose-950/60 to-indigo-950/60 border border-white/10 flex items-center justify-between">
+            <div>
+              <p class="text-sm font-bold text-white">Siap Untuk Implementasi Skala Nasional</p>
+              <p class="text-xs text-slate-400 font-mono">1 Backend • 4 Portals • Zero Cross-Contamination</p>
+            </div>
+            <a href="https://github.com/JooshuaAnd/DovaGenome" class="px-4 py-2 rounded-xl bg-white text-slate-950 font-bold text-xs hover:bg-slate-200 transition-colors">
+              Lihat GitHub Repo →
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t border-slate-800 pt-5 text-sm text-slate-500 font-mono">
+      <span>DovaGenome Pitch Deck</span>
+      <span>Future Horizons • Thank You</span>
+    </div>
+  </section>
+
+</body>
+</html>
