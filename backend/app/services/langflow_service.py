@@ -96,13 +96,19 @@ class LangflowService:
         supaya frontend bisa menampilkan pesan ramah.
         """
         if not self.configured:
-            log.error("langflow_failure reason=not_configured")
+            log.info("langflow_not_configured_falling_back_to_supabase_rag")
+            from app.services.rag_ai_service import generate_rag_answer
+            reply = generate_rag_answer(
+                message=message,
+                customer_id=getattr(passport, "customer_id", "") or session_id,
+                session_id=session_id,
+            )
             return AiConsultOut(
-                reply=USER_FACING["not_configured"],
+                reply=reply,
                 session_id=session_id,
                 flow_id=settings.langflow_flow_id,
                 degraded=True,
-                message="LANGFLOW_API_URL / LANGFLOW_API_KEY belum diisi.",
+                message="Supabase RAG Live Data Stream (Langflow unconfigured)",
             )
 
         payload = self._build_payload(message, session_id, passport, system_context)
@@ -128,13 +134,19 @@ class LangflowService:
                 if attempt < settings.langflow_max_retries:
                     time.sleep(1.5 * (attempt + 1))
                     continue
+                from app.services.rag_ai_service import generate_rag_answer
+                reply = generate_rag_answer(
+                    message=message,
+                    customer_id=getattr(passport, "customer_id", "") or session_id,
+                    session_id=session_id,
+                )
                 return AiConsultOut(
-                    reply=USER_FACING["timeout"],
+                    reply=reply,
                     session_id=session_id,
                     flow_id=settings.langflow_flow_id,
                     latency_ms=self._elapsed_ms(started),
                     degraded=True,
-                    message="Langflow timeout.",
+                    message="Supabase RAG Live Data (Langflow timeout)",
                 )
             except httpx.HTTPError as exc:
                 last_error = f"network:{type(exc).__name__}"
@@ -145,13 +157,19 @@ class LangflowService:
                 if attempt < settings.langflow_max_retries:
                     time.sleep(1.5 * (attempt + 1))
                     continue
+                from app.services.rag_ai_service import generate_rag_answer
+                reply = generate_rag_answer(
+                    message=message,
+                    customer_id=getattr(passport, "customer_id", "") or session_id,
+                    session_id=session_id,
+                )
                 return AiConsultOut(
-                    reply=USER_FACING["offline"],
+                    reply=reply,
                     session_id=session_id,
                     flow_id=settings.langflow_flow_id,
                     latency_ms=self._elapsed_ms(started),
                     degraded=True,
-                    message="Langflow tidak dapat dihubungi.",
+                    message="Supabase RAG Live Data (Langflow network error)",
                 )
 
             if response.status_code == 200:
@@ -198,23 +216,24 @@ class LangflowService:
             # 4xx = masalah permintaan, tidak berguna diulang.
             if 400 <= response.status_code < 500:
                 break
-            if attempt < settings.langflow_max_retries:
-                time.sleep(1.5 * (attempt + 1))
-
-        reply = USER_FACING["busy"]
-        if last_error == "http_401" or last_error == "http_403":
-            reply = (
-                "Maaf, layanan AI menolak permintaan (kredensial tidak valid). "
-                "Tim teknis sudah diberi tahu."
-            )
+        # Aliran data RAG dinamis langsung dari database Supabase:
+        # Mengambil profil pelanggan, riwayat pesanan aktual, menu & bahan hidup, serta dokumen SOP
+        from app.services.rag_ai_service import generate_rag_answer
+        reply = generate_rag_answer(
+            message=message,
+            customer_id=getattr(passport, "customer_id", "") or session_id,
+            session_id=session_id,
+        )
         return AiConsultOut(
             reply=reply,
             session_id=session_id,
             flow_id=settings.langflow_flow_id,
             latency_ms=self._elapsed_ms(started),
             degraded=True,
-            message=f"Langflow gagal: {last_error}",
+            message=f"Supabase RAG Data Stream ({last_error})",
         )
+
+
 
     # ── Payload ─────────────────────────────────────────────────────────────
     def _build_payload(

@@ -2,8 +2,10 @@
 
 Pola yang dipakai:
   * `get_current_customer`  → customer terautentikasi (JWT valid).
-  * `get_verified_customer` → customer yang Telegram-nya sudah tertaut.
   * `require_roles(...)`    → gerbang role untuk admin/kitchen.
+
+Menautkan Telegram tidak lagi menjadi gerbang: pelanggan boleh memesan di web
+tanpa memulai percakapan bot. Bila Telegram tertaut, bot ikut mengirim notifikasi.
 
 Router TIDAK boleh membaca body request atau database secara langsung untuk
 menentukan hak akses; semuanya lewat sini supaya tidak ada celah yang terlewat.
@@ -36,12 +38,6 @@ def get_current_customer(
         raise AuthError("Silakan masuk terlebih dahulu.")
     payload = auth_service.decode_token(credentials.credentials)
     return auth_service.customer_from_token_payload(payload)
-
-
-def get_verified_customer(customer: CustomerOut = Depends(get_current_customer)) -> CustomerOut:
-    """Untuk operasi yang butuh kepastian channel (mis. membuat pesanan)."""
-    auth_service.require_telegram_verified(customer)
-    return customer
 
 
 def require_roles(*roles: Role) -> Callable[[CustomerOut], CustomerOut]:

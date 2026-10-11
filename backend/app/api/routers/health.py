@@ -1,8 +1,4 @@
-"""Router health & diagnosa.
-
-`/health` sengaja tidak menyentuh Langflow supaya tidak bisa dipakai sebagai
-proxy untuk menguji credential AI. Ada endpoint terpisah untuk itu.
-"""
+"""Router health & diagnosa — Supabase."""
 
 from __future__ import annotations
 
@@ -11,9 +7,8 @@ from typing import Any
 from fastapi import APIRouter
 
 from app.core.config import settings
-from app.core.domain import COLLECTION_CUSTOMERS, REQUIRED_COLLECTIONS
 from app.core.logging import get_logger
-from app.repositories import astra
+from app.repositories import supabase
 from app.schemas.common import HealthPayload
 from app.services.langflow_service import langflow_service
 
@@ -21,21 +16,30 @@ log = get_logger("dova.api.health")
 
 router = APIRouter(tags=["health"])
 
+# Tabel yang ditampilkan di health check (subset dari MANAGED_TABLES)
+_HEALTH_TABLES = (
+    "packages",
+    "allergens",
+    "menus",
+    "customers",
+    "orders",
+)
+
 
 @router.get("/health", response_model=HealthPayload, summary="Status aplikasi")
 def health() -> HealthPayload:
-    connected = astra.is_connected()
+    connected = supabase.is_connected()
     counts: dict[str, Any] = {}
     if connected:
-        for name in (*REQUIRED_COLLECTIONS, COLLECTION_CUSTOMERS):
-            counts[name] = astra.count_documents(name)
+        for name in _HEALTH_TABLES:
+            counts[name] = supabase.count_rows(name)
     return HealthPayload(
         status="ok" if connected else "degraded",
         version=settings.app_version,
         environment=settings.environment,
         demo_mode=settings.demo_mode,
-        astra_connected=connected,
-        collections=counts,
+        db_connected=connected,
+        tables=counts,
         credentials=settings.credential_status() if settings.debug else {},
         telegram_bot_username=settings.telegram_bot_username,
     )
@@ -49,11 +53,6 @@ def langflow_health() -> dict[str, Any]:
 
 @router.get("/health/config", summary="Ringkasan konfigurasi")
 def config_summary() -> dict[str, Any]:
-    """
-    Ringkasan konfigurasi non-rahasia untuk debugging.
-
-    Hanya[bool] per credential — tidak pernah nilai stringnya.
-    """
     return {
         "app": settings.app_name,
         "version": settings.app_version,

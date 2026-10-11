@@ -10,7 +10,7 @@ import {
 
 import { ApiError, getErrorMessage, readToken, writeToken } from '@/services/http'
 import { authService } from '@/services/auth'
-import type { Customer, LoginPayload, RegisterPayload, Role } from '@/types'
+import type { Customer, CustomerSignInPayload, LoginPayload, RegisterPayload, Role } from '@/types'
 
 /** `status` — the session is being restored from a stored token. */
 export type AuthStatus = 'loading' | 'authenticated' | 'anonymous'
@@ -23,6 +23,7 @@ export interface AuthContextValue {
   isAuthenticated: boolean
   role: Role | null
   hasRole: (...roles: Role[]) => boolean
+  signInCustomer: (payload: CustomerSignInPayload) => Promise<Customer | null>
   login: (payload: LoginPayload) => Promise<Customer | null>
   register: (payload: RegisterPayload) => Promise<Customer | null>
   logout: () => void
@@ -78,6 +79,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(accessToken)
     setError(null)
   }, [])
+
+  const signInCustomer = useCallback(
+    async (payload: CustomerSignInPayload) => {
+      setError(null)
+      try {
+        const result = await authService.signInCustomer(payload)
+        adopt(result.access_token, result.customer)
+        return result.customer
+      } catch (cause) {
+        setError(
+          cause instanceof ApiError
+            ? cause
+            : new ApiError({
+                code: 'unknown_error',
+                message: getErrorMessage(cause),
+                details: {},
+                status: 0,
+              }),
+        )
+        return null
+      }
+    },
+    [adopt],
+  )
 
   const login = useCallback(
     async (payload: LoginPayload) => {
@@ -159,13 +184,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: status === 'authenticated',
       role: customer?.role ?? null,
       hasRole,
+      signInCustomer,
       login,
       register,
       logout,
       refresh,
       clearError,
     }),
-    [status, customer, token, error, hasRole, login, register, logout, refresh, clearError],
+    [
+      status,
+      customer,
+      token,
+      error,
+      hasRole,
+      signInCustomer,
+      login,
+      register,
+      logout,
+      refresh,
+      clearError,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

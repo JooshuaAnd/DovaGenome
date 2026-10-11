@@ -10,14 +10,12 @@ from __future__ import annotations
 import uuid
 
 from app.core.logging import get_logger
-from app.repositories.astra import get_collection
+from app.repositories import supabase as db
 from app.schemas.customer import CustomerOut
 from app.schemas.internal import FeedbackIn, FeedbackOut
 from app.utils.time import now_iso
 
 log = get_logger("dova.feedback")
-
-COLLECTION_FEEDBACK = "customer_feedback"
 
 ALLOWED_CATEGORIES = {"general", "menu", "service", "delivery", "complaint", "praise"}
 
@@ -28,31 +26,31 @@ def save(payload: FeedbackIn, *, customer: CustomerOut) -> FeedbackOut:
     if category not in ALLOWED_CATEGORIES:
         category = "general"
 
-    feedback_id = f"fb_{uuid.uuid4().hex[:10]}"
-    document = {
-        "_id": feedback_id,
-        "feedback_id": feedback_id,
-        "category": category,
-        "message": payload.message.strip(),
-        "email": payload.email.strip(),
-        "order_id": payload.order_id.strip(),
-        "rating": payload.rating,
-        "customer_id": customer.customer_id,
-        "customer_username": customer.username,
-        "created_at": now_iso(),
-        "handled": False,
-    }
-
+    order_id_val = payload.order_id.strip() or None
+    created_at = now_iso()
     try:
-        get_collection(COLLECTION_FEEDBACK).insert_one(document)
+        db.execute_write(
+            """
+            INSERT INTO customer_feedback
+                (customer_id, order_id, rating, comment, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                customer.customer_id,
+                order_id_val,
+                payload.rating,
+                payload.message.strip(),
+                created_at,
+            ),
+        )
     except Exception as exc:
-        # Umpan balik penting tapi tidak boleh menjatuhkan halaman.
-        log.error("Simpan feedback %s gagal: %s: %s", feedback_id, type(exc).__name__, exc)
+        log.error("Simpan feedback gagal: %s: %s", type(exc).__name__, exc)
         raise
 
-    log.info("feedback_saved id=%s category=%s customer=%s", feedback_id, category, customer.username)
+    feedback_id = f"fb_{uuid.uuid4().hex[:10]}"
+    log.info("feedback_saved category=%s customer=%s", category, customer.username)
     return FeedbackOut(
         feedback_id=feedback_id,
-        received_at=document["created_at"],
+        received_at=created_at,
         category=category,
     )

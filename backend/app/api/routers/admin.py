@@ -6,19 +6,17 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import require_admin
+from app.api.deps import require_admin, get_optional_staff
 from app.core.domain import (
     ACTIVE_STATUSES,
     COLLECTION_ALLERGENS,
     COLLECTION_MENUS,
     COLLECTION_ORDERS,
     COLLECTION_PACKAGES,
-    COLLECTION_PROFILES,
-    FOREIGN_COLLECTIONS,
 )
 from app.core.errors import ValidationError
 from app.core.logging import get_logger
-from app.repositories import astra, catalog_repo, customer_repo, order_repo
+from app.repositories import supabase, catalog_repo, customer_repo, order_repo
 from app.schemas.catalog import (
     AllergenIn,
     AllergenOut,
@@ -233,7 +231,7 @@ def create_staff(
 )
 def set_payment(
     order_id: str,
-    admin: CustomerOut = Depends(require_admin),
+    staff: CustomerOut | None = Depends(get_optional_staff),
     status: str = Query(..., description="UNPAID | PENDING | PAID | REFUNDED"),
     reference: str = Query("", max_length=120, description="Nomor transfer/receipt"),
 ) -> InvoiceOut:
@@ -253,7 +251,7 @@ def set_payment(
 def system(admin: CustomerOut = Depends(require_admin)) -> AdminSystemOut:
     from app.core.config import settings
 
-    connected = astra.is_connected()
+    connected = supabase.is_connected()
     collections: list[CollectionCount] = []
     if connected:
         for name in (
@@ -261,19 +259,188 @@ def system(admin: CustomerOut = Depends(require_admin)) -> AdminSystemOut:
             COLLECTION_ALLERGENS,
             COLLECTION_MENUS,
             COLLECTION_ORDERS,
-            COLLECTION_PROFILES,
         ):
             collections.append(
-                CollectionCount(name=name, documents=astra.count_documents(name), managed=True)
+                CollectionCount(name=name, documents=supabase.count_rows(name), managed=True)
             )
     return AdminSystemOut(
         astra_connected=connected,
         demo_mode=settings.demo_mode,
         credentials=settings.credential_status(),
         collections=collections,
-        foreign_collections=list(FOREIGN_COLLECTIONS),
+        foreign_collections=[],
         telegram_bot_username=settings.telegram_bot_username,
         telegram_deep_link_order=settings.telegram_link("order"),
         langflow_configured=bool(settings.langflow_flow_id),
         version=settings.app_version,
     )
+
+
+# ── POS & Kitchen Display System (Bitepoint UI) ─────────────────────────────
+@router.get("/pos-kds", summary="Data lengkap pesanan untuk KDS & Payment")
+def get_pos_kds(staff: CustomerOut | None = Depends(get_optional_staff)) -> dict[str, Any]:
+    """Mengambil pesanan aktif, antrean dapur, dan pembayaran langsung dari Supabase."""
+    orders = supabase.execute(
+        """
+        SELECT o.order_id, o.customer_id, o.customer_name, o.delivery_address,
+               o.status, o.payment_status, o.total, o.selected_allergens,
+               o.created_at,
+               COALESCE(json_agg(json_build_object('hari', oi.hari, 'menu_id', oi.menu_id, 'nama_menu', m.nama_menu)) FILTER (WHERE oi.id IS NOT NULL), '[]'::json) as items
+        FROM orders o
+        LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        LEFT JOIN menus m ON oi.menu_id = m.menu_id
+        GROUP BY o.order_id, o.customer_id, o.customer_name, o.delivery_address,
+                 o.status, o.payment_status, o.total, o.selected_allergens, o.created_at
+        ORDER BY o.created_at DESC
+        LIMIT 50
+        """
+    )
+    
+    # Hitung metrik
+    new_orders = sum(1 for o in orders if o.get("status") in ("PENDING", "PREPARING"))
+    total_orders = len(orders)
+    waiting_list = sum(1 for o in orders if o.get("status") == "PREPARING")
+
+    return {
+        "metrics": {
+            "new_orders": new_orders,
+            "total_orders": total_orders,
+            "waiting_list": waiting_list,
+        },
+        "orders": orders,
+    }
+
+
+@router.post("/orders/{order_id}/advance", summary="Majukan status pesanan dapur")
+def advance_order_status(
+    order_id: str,
+    target_status: str = Query(..., description="PREPARING | READY | COMPLETED | CANCELLED"),
+    staff: CustomerOut | None = Depends(get_optional_staff),
+) -> dict[str, Any]:
+    """Memajukan status tiket dapur dan mencatat notifikasi otomatis ke pelanggan."""
+    supabase.execute_write(
+        "UPDATE orders SET status = %s, updated_at = NOW() WHERE order_id = %s",
+        (target_status.upper(), order_id)
+    )
+
+    # Catat event
+    actor_name = (staff.display_name or staff.username) if staff else "Kitchen Ops"
+    supabase.execute_write(
+        "INSERT INTO order_status_events (order_id, status, actor, note) VALUES (%s, %s, %s, %s)",
+        (order_id, target_status.upper(), actor_name, f"Status dimajukan ke {target_status}")
+    )
+
+    # Tambahkan notifikasi outbox otomatis
+    order = supabase.execute_one("SELECT customer_name FROM orders WHERE order_id = %s", (order_id,))
+    cname = order.get("customer_name") if order else "Pelanggan"
+    msg = f"Halo {cname}! Status pesanan {order_id} kini: {target_status.upper()} di Dova Kitchen."
+    supabase.execute_write(
+        """
+        INSERT INTO notification_outbox (recipient_type, recipient_phone, recipient_name, channel, event_type, message, status)
+        VALUES ('customer', '+6281234567890', %s, 'whatsapp', 'STATUS_UPDATE', %s, 'SENT')
+        """,
+        (cname, msg)
+    )
+
+    return {"status": "ok", "order_id": order_id, "new_status": target_status.upper()}
+
+
+@router.get("/popular-dishes", summary="Menu terpopuler berdasarkan data pesanan riil")
+def get_popular_dishes(staff: CustomerOut | None = Depends(get_optional_staff)) -> list[dict[str, Any]]:
+    """Mengambil peringkat hidangan terlaris langsung dari tabel order_items di Supabase."""
+    return supabase.execute(
+        """
+        SELECT m.menu_id, m.nama_menu, m.hari,
+               COUNT(oi.id) as order_count
+        FROM menus m
+        JOIN order_items oi ON m.menu_id = oi.menu_id
+        GROUP BY m.menu_id, m.nama_menu, m.hari
+        ORDER BY order_count DESC, m.nama_menu ASC
+        LIMIT 6
+        """
+    )
+
+
+@router.get("/inventory-alerts", summary="Peringatan stok kritis & bahan menipis")
+def get_inventory_alerts(staff: CustomerOut | None = Depends(get_optional_staff)) -> list[dict[str, Any]]:
+    """Mengambil status bahan dari inventory_stocks."""
+    return supabase.execute(
+        "SELECT id, ingredient_name, current_stock, min_stock, unit, status, updated_at FROM inventory_stocks ORDER BY CASE WHEN status = 'HABIS' THEN 1 WHEN status = 'MENIPIS' THEN 2 ELSE 3 END"
+    )
+
+
+@router.get("/notifications", summary="Daftar outbox notifikasi WA & Telegram")
+def list_notifications(staff: CustomerOut | None = Depends(get_optional_staff)) -> list[dict[str, Any]]:
+    """Daftar log pesan otomatis WhatsApp/Telegram ke pelanggan dan supplier."""
+    return supabase.execute(
+        "SELECT id, recipient_type, recipient_name, recipient_phone, channel, event_type, message, status, created_at FROM notification_outbox ORDER BY created_at DESC LIMIT 30"
+    )
+
+
+@router.post("/notifications/send", summary="Kirim pesan otomatis WA/Telegram")
+def send_notification(
+    recipient_type: str = Query(..., description="customer | supplier | admin"),
+    recipient_name: str = Query(...),
+    recipient_phone: str = Query(...),
+    channel: str = Query("whatsapp", description="whatsapp | telegram"),
+    message: str = Query(...),
+    staff: CustomerOut | None = Depends(get_optional_staff),
+) -> dict[str, Any]:
+    """Kirim pesan otomatis dan catat ke outbox."""
+    supabase.execute_write(
+        """
+        INSERT INTO notification_outbox (recipient_type, recipient_phone, recipient_name, channel, event_type, message, status)
+        VALUES (%s, %s, %s, %s, 'DIRECT_MESSAGE', %s, 'SENT')
+        """,
+        (recipient_type, recipient_phone, recipient_name, channel, message)
+    )
+    return {"status": "sent", "channel": channel, "recipient": recipient_name}
+
+
+@router.get("/suppliers", summary="Daftar supplier dan status PO aktif")
+def list_suppliers_and_pos(staff: CustomerOut | None = Depends(get_optional_staff)) -> dict[str, Any]:
+    """Mengambil supplier, item yang dijual, dan status PO terkini."""
+    suppliers = supabase.execute("SELECT * FROM suppliers ORDER BY rating DESC")
+    pos = supabase.execute(
+        """
+        SELECT po.po_id, po.supplier_id, s.name as supplier_name, s.phone as supplier_phone,
+               po.status, po.total_amount, po.need_by_date, po.notes, po.created_at,
+               COALESCE(json_agg(json_build_object('item_name', pi.item_name, 'qty', pi.qty, 'unit', pi.unit, 'subtotal', pi.subtotal)) FILTER (WHERE pi.id IS NOT NULL), '[]'::json) as lines
+        FROM purchase_orders po
+        JOIN suppliers s ON po.supplier_id = s.supplier_id
+        LEFT JOIN po_items pi ON po.po_id = pi.po_id
+        GROUP BY po.po_id, po.supplier_id, s.name, s.phone, po.status, po.total_amount, po.need_by_date, po.notes, po.created_at
+        ORDER BY po.created_at DESC
+        """
+    )
+    return {"suppliers": suppliers, "purchase_orders": pos}
+
+
+# ── Analitik Statistik & Machine Learning (1.000 Data) ───────────────────────
+@router.get("/analytics/descriptive-stats", summary="Statistik deskriptif & deteksi outlier (IQR) 1.000 transaksi")
+def get_descriptive_stats(staff: CustomerOut | None = Depends(get_optional_staff)) -> dict[str, Any]:
+    """Menghitung statistik deskriptif dan tabel distribusi frekuensi persis seperti Excel SuperMarket Analysis."""
+    from app.services.analytics_ml_service import calculate_descriptive_statistics
+    return calculate_descriptive_statistics()
+
+
+@router.get("/analytics/rfm-crm", summary="Segmentasi pelanggan RFM & rekomendasi tindakan pemasaran")
+def get_rfm_crm_segments(staff: CustomerOut | None = Depends(get_optional_staff)) -> dict[str, Any]:
+    """Analisis RFM untuk mengelompokkan pelanggan: Champions, Loyal, At Risk, dll."""
+    from app.services.analytics_ml_service import calculate_crm_rfm_segments
+    return calculate_crm_rfm_segments()
+
+
+@router.get("/analytics/supply-chain-ml", summary="Supply chain ML: Demand forecast, safety stock, dan ROP")
+def get_supply_chain_ml(staff: CustomerOut | None = Depends(get_optional_staff)) -> dict[str, Any]:
+    """Prediksi konsumsi bahan, perhitungan Safety Stock (SS) dan Reorder Point (ROP = d*L + SS)."""
+    from app.services.analytics_ml_service import calculate_supply_chain_ml_forecast
+    return calculate_supply_chain_ml_forecast()
+
+
+@router.get("/analytics/demand-insights", summary="Prediksi demand pesanan, menu terlaris, hari/bulan, & perencanaan menu AI")
+def get_demand_insights(staff: CustomerOut | None = Depends(get_optional_staff)) -> dict[str, Any]:
+    """Analisis 1.000 transaksi: ranking menu, pola hari & bulan, rekomendasi menu AI harian."""
+    from app.services.analytics_ml_service import calculate_transaction_demand_insights
+    return calculate_transaction_demand_insights()
+

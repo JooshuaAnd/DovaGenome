@@ -113,6 +113,35 @@ class CustomerAdminOut(CustomerOut):
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────
+class CustomerSignIn(ApiModel):
+    """Pelanggan cukup mengisi nama lengkap + nomor telepon.
+
+    Satu form untuk masuk sekaligus daftar: nomor telepon adalah pengenal unik
+    pelanggan. Bila nomor sudah terdaftar → login, bila belum → akun dibuat.
+    """
+
+    display_name: str = Field(min_length=1, max_length=120)
+    phone: str
+
+    @field_validator("display_name")
+    @classmethod
+    def _valid_name(cls, v: str) -> str:
+        v = (v or "").strip()
+        if len(v) < 1:
+            raise ValueError("nama lengkap wajib diisi")
+        return v
+
+    @field_validator("phone")
+    @classmethod
+    def _valid_phone(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("nomor telepon wajib diisi")
+        if not PHONE_RE.match(v):
+            raise ValueError("nomor telepon tidak valid")
+        return v
+
+
 class RegisterIn(ApiModel):
     """MVP passwordless: username (+ telepon opsional) sudah cukup untuk masuk."""
 

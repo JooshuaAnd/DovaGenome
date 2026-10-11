@@ -1,0 +1,20 @@
+# Daftar Temuan Cacat & Kesenjangan (Defects List)
+
+Dokumen ini mencatat seluruh temuan defek dari audit kode aktual terhadap spesifikasi Bagian A.
+
+---
+
+## Tabel Defek & Kesenjangan (Berdasarkan Bukti Berkas)
+
+| ID | Keparahan | Bukti (File:Baris) | Dampak ke Pengguna | Usulan Perbaikan |
+|---|---|---|---|---|
+| **DEF-01** | 🔴 Tinggi | [`telegram_bot.py:32-37`](file:///d:/DovaGenome/DovaGenome/telegram_bot.py#L32-L37) & [`telegram_bot.py:84-93`](file:///d:/DovaGenome/DovaGenome/telegram_bot.py#L84-L93) | Bot mengakses Astra DB langsung, mengabaikan API FastAPI, sehingga aturan bisnis terduplikasi dan rawan inkonsistensi data. | Refactor bot menjadi klien tipis yang memanggil API FastAPI (`apps/bot` via `aiogram 3`). |
+| **DEF-02** | 🔴 Tinggi | [`backend/app/api/routers/orders.py:44-54`](file:///d:/DovaGenome/DovaGenome/backend/app/api/routers/orders.py#L44-L54) | Tidak ada entitas `OrderDraft` di server. Progres wizard tidak bisa disimpan sementara dan tidak bisa dilanjutkan lintas perangkat (Web ↔ Telegram). | Buat tabel `order_drafts` dan endpoint `POST /drafts` serta `GET/PATCH /drafts/{id}`. |
+| **DEF-03** | 🔴 Tinggi | [`backend/app/schemas/order.py:108-124`](file:///d:/DovaGenome/DovaGenome/backend/app/schemas/order.py#L108-L124) | `OrderCreateIn` hanya menerima `package_code` dan array `schedule_days`, belum mendukung kuantitas porsi dinamis per menu. | Dukung `selections` dengan field `quantity` dan hitung total harga berdasarkan porsi di server. |
+| **DEF-04** | 🔴 Tinggi | [`frontend/src/pages/OrderPage.tsx:188-195`](file:///d:/DovaGenome/DovaGenome/frontend/src/pages/OrderPage.tsx#L188-L195) | Batas waktu bayar 10 menit hanya berupa timer countdown di UI browser, belum ada expiry di server/gateway dan belum ada job pembatal otomatis. | Simpan `expires_at` pada pesanan dan jadwalkan job background (Redis/Celery/ARQ) untuk menandai status expired. |
+| **DEF-05** | 🟠 Sedang | [`backend/app/repositories/customer_repo.py:90-103`](file:///d:/DovaGenome/DovaGenome/backend/app/repositories/customer_repo.py#L90-L103) | Belum ada model data dan tabel tersendiri untuk alamat pelanggan tersimpan (`addresses`). | Tambahkan tabel `addresses` (customer_id, label, alamat, catatan_kurir, is_primary) dan CRUD `/me/addresses`. |
+| **DEF-06** | 🟠 Sedang | [`backend/app/services/catalog_service.py:89-105`](file:///d:/DovaGenome/DovaGenome/backend/app/services/catalog_service.py#L89-L105) | Perhitungan tanggal layanan (`get_service_week`) belum menerapkan cutoff waktu 20:00 WIB dan logika pembatasan jendela H+1/H+2. | Implementasikan fungsi `get_orderable_window(now)` murni di backend sesuai aturan 4.3 dengan unit test. |
+| **DEF-07** | 🟠 Sedang | [`backend/app/services/safety_service.py:14-25`](file:///d:/DovaGenome/DovaGenome/backend/app/services/safety_service.py#L14-L25) | Output status pencocokan alergi memakai format `SAFE / CAUTION / BLOCKED`, belum menyertakan `warnings[]` dengan kalimat bahasa Indonesia yang terstruktur per alergen. | Sesuaikan schema output menjadi `status: safe | warning`, `matched_allergens[]`, dan `warnings[{allergen, ingredient, reason}]`. |
+| **DEF-08** | 🟡 Rendah | [`frontend/package.json:9-15`](file:///d:/DovaGenome/DovaGenome/frontend/package.json#L9-L15) | Tipe TypeScript pada frontend masih didefinisikan secara manual di `src/services/types.ts` dan berpotensi drift dari schema backend. | Pasang pipeline `openapi-typescript` untuk generate otomatis tipe dari OpenAPI JSON FastAPI ke `packages/contracts`. |
+| **DEF-09** | 🟡 Rendah | [`backend/app/api/routers/`](file:///d:/DovaGenome/DovaGenome/backend/app/api/routers) | Belum ada endpoint `/webhooks/payment` untuk menerima notifikasi dari payment gateway (Midtrans) dengan verifikasi signature & idempotency. | Buat router `payment.py` dengan endpoint `/webhooks/payment` yang idempotent dan memverifikasi signature hash. |
+| **DEF-10** | 🟡 Rendah | [`backend/tests/`](file:///d:/DovaGenome/DovaGenome/backend/tests) | Belum ada automated test untuk alur pemesanan Playwright end-to-end (e2e) di frontend. | Siapkan konfigurasi Playwright dan tulis skenario e2e untuk pelanggan baru & pelanggan lama. |

@@ -18,9 +18,9 @@ import type {
 } from '@/types'
 
 export const BRAND = {
-  name: 'DovaGenome',
+  name: 'Dova Kitchen',
   sub: 'Precision Catering',
-  tagline: 'Makan siang mingguan yang aman, steril, dan bisa dilacak sampai ke wajan.',
+  tagline: 'Katering harian terpercaya dengan perlindungan alergi presisi.',
 } as const
 
 /* ── Service days ────────────────────────────────────────────────────────── */

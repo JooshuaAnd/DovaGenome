@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_current_customer
+from app.api.deps import get_current_customer, get_optional_customer
 from app.core.config import settings
 from app.core.domain import DAYS
 from app.core.logging import get_logger
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 @router.post("/consult", response_model=AiConsultOut, summary="Tanya asisten AI")
 def consult(
-    payload: AiConsultIn, customer: CustomerOut = Depends(get_current_customer)
+    payload: AiConsultIn, customer: CustomerOut | None = Depends(get_optional_customer)
 ) -> AiConsultOut:
     """
     Tanya asisten katering.
@@ -40,20 +40,23 @@ def consult(
     Bila Langflow tidak bisa dihubungi, backend tetap membalas dengan pesan
     fallback yang jelas dan `degraded=true` — bukan traceback.
     """
+    session_id = payload.session_id or (customer.customer_id if customer else "guest")
     return ai_client.ask(
         message=payload.message,
-        session_id=payload.session_id or customer.customer_id,
+        session_id=session_id,
         system_context=_customer_context(customer, payload.context),
     )
 
 
-def _customer_context(customer: CustomerOut, extra: dict) -> str:
+def _customer_context(customer: CustomerOut | None, extra: dict) -> str:
     """Konteks ringkas untuk prompt — bukan data sensitif."""
-    lines = [
-        f"Pelanggan: {customer.display_name or customer.username}",
-        f"Peran: {customer.role}",
-        f"Telegram tertaut: {'ya' if customer.telegram_verified else 'belum'}",
-    ]
+    lines = []
+    if customer:
+        lines.extend([
+            f"Pelanggan: {customer.display_name or customer.username}",
+            f"Peran: {customer.role}",
+            f"Telegram tertaut: {'ya' if customer.telegram_verified else 'belum'}",
+        ])
     for key, value in extra.items():
         lines.append(f"{key}: {value}")
     return " | ".join(lines)

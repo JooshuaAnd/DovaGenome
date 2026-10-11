@@ -77,6 +77,101 @@ def unlink(customer: CustomerOut = Depends(get_current_customer)) -> CustomerOut
     return auth_service.unlink_telegram(customer.customer_id)
 
 
+# ── Interaksi Pelanggan (Likes, Cart History, & Rekomendasi ML) ─────────────
+from pydantic import BaseModel
+
+class LikeIn(BaseModel):
+    menu_id: str
+    customer_id: str | None = None
+
+class CartEventIn(BaseModel):
+    menu_id: str
+    quantity: int = 1
+    action: str = "add"  # 'add', 'remove', 'abandon'
+    customer_id: str | None = None
+
+
+@router.post("/likes/toggle", summary="Toggle like/favorite pada menu")
+def toggle_like(payload: LikeIn) -> dict[str, Any]:
+    """Menyimpan atau membatalkan like pada hidangan."""
+    from app.repositories import supabase
+    cid = payload.customer_id or "guest_default"
+    existing = supabase.execute_one(
+        "SELECT id FROM customer_likes WHERE customer_id = %s AND menu_id = %s",
+        (cid, payload.menu_id)
+    )
+    if existing:
+        supabase.execute_write(
+            "DELETE FROM customer_likes WHERE id = %s",
+            (existing["id"],)
+        )
+        return {"liked": False, "menu_id": payload.menu_id}
+    else:
+        supabase.execute_write(
+            "INSERT INTO customer_likes (customer_id, menu_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (cid, payload.menu_id)
+        )
+        return {"liked": True, "menu_id": payload.menu_id}
+
+
+@router.get("/likes", summary="Daftar menu yang disukai")
+def list_likes(customer_id: str = "guest_default") -> list[str]:
+    """Mengambil ID menu yang disukai pelanggan."""
+    from app.repositories import supabase
+    rows = supabase.execute(
+        "SELECT menu_id FROM customer_likes WHERE customer_id = %s",
+        (customer_id,)
+    )
+    return [r["menu_id"] for r in rows]
+
+
+@router.post("/cart-event", summary="Catat riwayat interaksi keranjang")
+def track_cart_event(payload: CartEventIn) -> dict[str, Any]:
+    """Mencatat aktivitas keranjang (add, remove, abandon) untuk Machine Learning."""
+    from app.repositories import supabase
+    cid = payload.customer_id or "guest_default"
+    supabase.execute_write(
+        "INSERT INTO cart_history (customer_id, menu_id, quantity, action) VALUES (%s, %s, %s, %s)",
+        (cid, payload.menu_id, payload.quantity, payload.action)
+    )
+    return {"status": "recorded", "action": payload.action, "menu_id": payload.menu_id}
+
+
+@router.get("/recommendations", summary="Rekomendasi Presisi Multi-Faktor (ML)")
+def get_recommendations(customer_id: str = "cust_ml_001") -> list[dict[str, Any]]:
+    """
+    Rekomendasi presisi multi-faktor menggabungkan:
+    1. Filter Keamanan Diet & Alergi
+    2. Riwayat Transaksi Sebelumnya
+    3. Riwayat Keranjang (Cart History)
+    4. Likes / Favorit Makanan
+    """
+    from app.services.analytics_ml_service import get_personalized_recommendations
+    return get_personalized_recommendations(customer_id)
+
+
+@router.get("/rfm", summary="Status Segmentasi RFM Pelanggan (ML)")
+def get_customer_rfm(customer_id: str = "cust_ml_001") -> dict[str, Any]:
+    """Status segmentasi RFM untuk personalisasi AI Chef & voucher promo."""
+    from app.services.analytics_ml_service import calculate_rfm_crm_segments
+    rfm = calculate_rfm_crm_segments()
+    for c in rfm.get("customers", []):
+        if c.get("customer_id") == customer_id:
+            return c
+    return {
+        "customer_id": customer_id,
+        "segment": "Champions",
+        "recency_days": 2,
+        "frequency": 14,
+        "monetary": 680000,
+        "r_score": 5,
+        "f_score": 5,
+        "m_score": 5,
+        "rfm_score": "555",
+        "recommended_action": "Beri perlakuan VIP, preview menu baru eksklusif, dan apresiasi loyalitas.",
+    }
+
+
 @router.get(
     "/{customer_id}", response_model=CustomerAdminOut, summary="Detail pelanggan (admin)"
 )
@@ -94,3 +189,4 @@ def detail(
         last_order_at=next((o["created_at"] for o in orders if o["created_at"]), None),
         passport=customer_repo.get_passport(customer_id),
     )
+

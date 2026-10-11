@@ -123,6 +123,12 @@ export interface LoginPayload {
   password?: string | null
 }
 
+/** Satu form pelanggan: nama lengkap + nomor telepon (login/daftar otomatis). */
+export interface CustomerSignInPayload {
+  display_name: string
+  phone: string
+}
+
 export interface RegisterPayload {
   username: string
   display_name?: string

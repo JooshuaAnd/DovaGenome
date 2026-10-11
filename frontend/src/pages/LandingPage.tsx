@@ -116,7 +116,7 @@ export function LandingPage() {
         {/* ── Pillars ──────────────────────────────────────────────────── */}
         <section className="px-4 pb-16 sm:px-6 sm:pb-20">
           <div className="mx-auto max-w-6xl">
-            <p className="eyebrow">Kenapa DovaGenome</p>
+            <p className="eyebrow">Kenapa Dova Kitchen</p>
             <h2 className="mt-2 max-w-2xl text-2xl sm:text-3xl">
               Keamanan pangan yang bisa diaudit, bukan sekadar diklaim.
             </h2>

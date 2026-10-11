@@ -95,28 +95,27 @@ ALLERGEN_KEYWORDS = [
     "telur", "mayones",
 ]
 
-#: Collection milik aplikasi. JANGAN pernah ditulis oleh migrasi buta —
-#: database Astra ini juga dipakai project Langflow lain.
-REQUIRED_COLLECTIONS = (
-    "user_profiles",
-    "kitchen_orders",
-    "catering_packages",
-    "allergen_definitions",
-    "catering_menus",
-)
+#: Nama tabel Postgres — dipakai repository dan health check.
+TABLE_PACKAGES  = "packages"
+TABLE_ALLERGENS = "allergens"
+TABLE_MENUS     = "menus"
+TABLE_MENU_INGREDIENTS = "menu_ingredients"
+TABLE_ORDERS    = "orders"
+TABLE_ORDER_ITEMS = "order_items"
+TABLE_ORDER_STATUS_EVENTS = "order_status_events"
+TABLE_CUSTOMERS = "customers"
+TABLE_DIETARY_PASSPORTS = "dietary_passports"
+TABLE_FEEDBACK  = "customer_feedback"
+TABLE_AUDIT_LOG = "audit_log"
 
-COLLECTION_PACKAGES = "catering_packages"
-COLLECTION_ALLERGENS = "allergen_definitions"
-COLLECTION_MENUS = "catering_menus"
-COLLECTION_ORDERS = "kitchen_orders"
-COLLECTION_PROFILES = "user_profiles"
-
-#: Collection milik Langflow / project lain — read-only, jangan pernah di-seed.
-FOREIGN_COLLECTIONS = ("dova_kitchen_catering", "hr_documents")
-
-#: Collection baru milik aplikasi (dibuat saat startup, additive).
-COLLECTION_CUSTOMERS = "customers"
-COLLECTION_FEEDBACK = "customer_feedback"
+#: Alias backward-compat untuk kode yang masih memakai nama lama.
+#: Akan dihapus bertahap di fase berikutnya.
+COLLECTION_PACKAGES  = TABLE_PACKAGES
+COLLECTION_ALLERGENS = TABLE_ALLERGENS
+COLLECTION_MENUS     = TABLE_MENUS
+COLLECTION_ORDERS    = TABLE_ORDERS
+COLLECTION_CUSTOMERS = TABLE_CUSTOMERS
+COLLECTION_FEEDBACK  = TABLE_FEEDBACK
 
 # ── Slot waktu pengiriman yang bisa dihindari pelanggan ────────────────────
 AVOIDED_TIME_OPTIONS: dict[str, str] = {

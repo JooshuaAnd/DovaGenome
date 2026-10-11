@@ -1,19 +1,18 @@
-"""Auth service â€” MVP passwordless dengan verifikasi Telegram (spec Â§21).
+"""Auth service â€” MVP passwordless berbasis nomor telepon.
 
-Alur:
-  1. Customer memasukkan username (+ telepon opsional) â†’ akun langsung dibuat.
-  2. Backend menerbitkan JWT.
-  3. Akun belum `telegram_verified`. Create order ditolak sampai terhubung.
-  4. Customer membuka deep link `t.me/<bot>?start=link_<CODE>`.
-  5. Bot memanggil `POST /api/customers/link/telegram` dengan code + chat_id.
-  6. `chat_id` terikat ke `customer_id`, `telegram_verified = True`.
+Alur pelanggan:
+  1. Customer mengisi nama lengkap + nomor telepon (satu form, masuk/daftar).
+  2. Nomor telepon = pengenal unik: sudah ada â†’ login, belum ada â†’ akun dibuat.
+  3. Backend menerbitkan JWT. Pelanggan langsung bisa memesan di web.
+
+Menautkan Telegram bersifat opsional: bila tertaut, bot mengirim konfirmasi &
+pembaruan status; bila tidak, pesanan tetap berjalan.
 
 Admin/kitchen WAJIB memakai password (`password_hash` terisi).
 
 CATATAN KEAMANAN: mode passwordless cocok untuk MVP, bukan produksi. Ia
-dibatasi rate-limit di router dan selalu diwajibkan verifikasi Telegram untuk
-memesan. Kolom `password_hash` sudah tersedia sehingga migrasi ke password/OTP
-tidak memerlukan perubahan schema.
+dibatasi rate-limit di router. Kolom `password_hash` sudah tersedia sehingga
+migrasi ke password/OTP tidak memerlukan perubahan schema.
 """
 
 from __future__ import annotations
@@ -30,8 +29,10 @@ from app.core.errors import AuthError, ConflictError, NotFoundError, ValidationE
 from app.core.logging import get_logger
 from app.models.enums import Role
 from app.repositories import customer_repo
+from app.repositories.customer_repo import normalize_phone, username_from_phone
 from app.schemas.customer import (
     CustomerOut,
+    CustomerSignIn,
     LoginIn,
     RegisterIn,
     TelegramLinkIn,
@@ -110,6 +111,42 @@ def register_customer(payload: RegisterIn) -> TokenOut:
     return TokenOut(
         access_token=token, expires_in=expires_in, customer=customer
     )
+
+
+def sign_in_customer(payload: CustomerSignIn) -> TokenOut:
+    """Masuk / daftar pelanggan hanya dengan nama lengkap + nomor telepon.
+
+    Nomor telepon adalah pengenal unik: bila sudah terdaftar → login, bila belum
+    → akun pelanggan baru dibuat. Tidak ada kata sandi (MVP), dan pelanggan bisa
+    langsung memesan di web tanpa menautkan Telegram.
+    """
+    phone = normalize_phone(payload.phone)
+    if not phone:
+        raise ValidationError("Nomor telepon wajib diisi.")
+
+    doc = customer_repo.find_by_phone(phone)
+    if doc:
+        if str(doc.get("status")) != "active":
+            raise AuthError("Akun ini dinonaktifkan. Hubungi admin.")
+        if str(doc.get("role") or Role.CUSTOMER.value) != Role.CUSTOMER.value:
+            raise AuthError("Nomor ini milik akun staf. Silakan masuk lewat tab staf.")
+        customer_id = str(doc.get("customer_id") or doc.get("_id"))
+        if payload.display_name and payload.display_name != str(doc.get("display_name") or ""):
+            doc = customer_repo.update_fields(customer_id, {"display_name": payload.display_name})
+        log.info("customer_signin username=%s", doc.get("username"))
+    else:
+        doc = customer_repo.create_customer(
+            username=username_from_phone(phone),
+            display_name=payload.display_name,
+            phone=phone,
+            role=Role.CUSTOMER.value,
+        )
+        log.info("customer_registered username=%s", doc.get("username"))
+
+    customer_id = str(doc.get("customer_id") or doc.get("_id"))
+    role = str(doc.get("role") or Role.CUSTOMER.value)
+    token, expires_in = issue_token(customer_id, role)
+    return TokenOut(access_token=token, expires_in=expires_in, customer=customer_repo.to_public(doc))
 
 
 def login_customer(payload: LoginIn) -> TokenOut:
@@ -226,19 +263,6 @@ def customer_from_token_payload(payload: dict[str, Any]) -> CustomerOut:
     if str(doc.get("status")) != "active":
         raise AuthError("Akun ini dinonaktifkan.")
     return customer_repo.to_public(doc)
-
-
-def require_telegram_verified(customer: CustomerOut) -> None:
-    """Gerbang sebelum membuat pesanan."""
-    if not customer.telegram_verified:
-        raise ValidationError(
-            "Hubungkan akun Telegram Anda sebelum memesan. Ini dipakai untuk "
-            "mengirim konfirmasi dan pembaruan status pesanan.",
-            details={
-                "telegram_link_code": customer.telegram_link_code,
-                "telegram_deep_link": customer.telegram_deep_link,
-            },
-        )
 
 
 # â”€â”€ Staff (admin / kitchen) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

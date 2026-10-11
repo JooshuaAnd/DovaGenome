@@ -1,748 +1,1543 @@
-import { ArrowRight, Check, ChevronLeft, Loader2, Lock, ShieldCheck } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+import {
+  Bell,
+  CheckCircle2,
+  Clock,
+  Heart,
+  MapPin,
+  Menu as MenuIcon,
+  Minus,
+  Plus,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Star,
+  Utensils,
+  X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
-import { PageState } from '@/components/common/PageState'
-import { DayOptionsList } from '@/components/menu/MenuOptionCard'
-import { WeekEmptyCard, WeekStrip } from '@/components/menu/WeekStrip'
-import { SafetyBadge } from '@/components/safety/SafetyBadge'
-import { SafetyCallout } from '@/components/safety/SafetyCallout'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { DovaChatbot } from '@/components/chat/DovaChatbot'
 import { useApi } from '@/hooks/useApi'
-import { useAsync } from '@/hooks/useAsync'
 import { useAuth } from '@/hooks/useAuth'
-import { useDailySelection, useServiceWeek, worstLevelOrUndefined } from '@/hooks/useServiceWeek'
-import { DAY_SHORT } from '@/lib/constants'
 import { cn } from '@/lib/utils'
-import { formatIDR } from '@/lib/format'
 import { catalogService } from '@/services/catalog'
 import { customersService } from '@/services/customers'
-import { getErrorMessage } from '@/services/http'
-import { ordersService } from '@/services/orders'
-import type {
-  Allergen,
-  DaySelection,
-  Package,
-  Passport,
-  PassportIn,
-  Restriction,
-  RestrictionIn,
-  SafetyLevel,
-  ServiceDay,
-} from '@/types'
+import type { Allergen, Menu, Passport } from '@/types'
 
-type Step = 'profile' | 'package' | 'menu' | 'review'
+/* ── Kurasi Foto Makanan Resolusi Tinggi Sesuai Menu Dova Kitchen ──────────── */
+const MENU_IMAGES: Record<string, string> = {
+  'menu_senin_ayam-rosemary':
+    'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=800&q=80',
+  'Beef Bulgogi Wijen & Nasi Beras Cokelat':
+    'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80',
+  'Tumis Tahu Jamur Saus Teriyaki (Vegetarian)':
+    'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
+  'Sup Daging Sapi Jamur Rempah':
+    'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80',
+  'Ayam Fillet Crispy Saus Salted Egg':
+    'https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=800&q=80',
+  'Fillet Dori Panggang Lemon & Salad Jagung':
+    'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80',
+  'Ayam Suwir Sambal Matah & Urap Sayur':
+    'https://images.unsplash.com/photo-1569058242253-92a9c755a0ec?auto=format&fit=crop&w=800&q=80',
+  'Ikan Kakap Bakar Kunyit & Nasi Merah':
+    'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=800&q=80',
+  'Gado-Gado Roll Saus Kacang Gurih':
+    'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+  'Tumis Ayam Jamur Brokoli Saus Bawang':
+    'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=800&q=80',
+  'Udang Bakar Madu Jimbaran & Nasi Merah':
+    'https://images.unsplash.com/photo-1559737558-2f5a35f4523b?auto=format&fit=crop&w=800&q=80',
+  'Rendang Daging Sapi Suwir & Buncis':
+    'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80',
+  'Ayam Bakar Taliwang & Plecing Kangkung':
+    'https://images.unsplash.com/photo-1527477378408-1bc0e2270921?auto=format&fit=crop&w=800&q=80',
+  'Salmon Fillet Lemon Herb & Kentang Kukus':
+    'https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80',
+  'Pasta Fusilli Ayam Pesto Keju':
+    'https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=800&q=80',
+  'Nasi Merah Ayam Bakar Madu Ketumbar':
+    'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80',
+  'Sup Tom Yum Udang & Ikan Kakap':
+    'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=800&q=80',
+  'Steak Tempe Lada Hitam (Vegetarian)':
+    'https://images.unsplash.com/photo-1585238342024-78d387f4a707?auto=format&fit=crop&w=800&q=80',
+}
 
-const STEPS: Array<{ id: Step; title: string }> = [
-  { id: 'profile', title: 'Batasan makanan' },
-  { id: 'package', title: 'Paket & hari' },
-  { id: 'menu', title: 'Menu tiap hari' },
-  { id: 'review', title: 'Konfirmasi' },
-]
+const DEFAULT_FOOD_IMAGE =
+  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'
 
-/**
- * Weekly order wizard.
- *
- * Four linear steps, mobile-first, one decision per screen. The dietary profile
- * comes first on purpose: every later screen shows safety verdicts, and a verdict
- * means nothing before the restrictions it was computed against are known.
- *
- * Safety is never decided here. The backend recomputes it from the stored
- * passport on submit, so a blocked option is shown and marked rather than hidden
- * — a rejection is never a surprise on the last screen.
- */
+const DAYS_LIST: Record<string, { id: string; label: string; icon: string }> = {
+  all: { id: 'all', label: 'Semua', icon: '🍽️' },
+  Senin: { id: 'Senin', label: 'Senin', icon: '🍗' },
+  Selasa: { id: 'Selasa', label: 'Selasa', icon: '🥩' },
+  Rabu: { id: 'Rabu', label: 'Rabu', icon: '🐟' },
+  Kamis: { id: 'Kamis', label: 'Kamis', icon: '🍤' },
+  Jumat: { id: 'Jumat', label: 'Jumat', icon: '🥗' },
+  Sabtu: { id: 'Sabtu', label: 'Sabtu', icon: '🍲' },
+}
+
+const PRICE_PER_PORTION = 42000
+
+interface CartItem {
+  menu: Menu
+  quantity: number
+  riskAccepted: boolean
+  matchedAllergens: string[]
+}
+
 export function OrderPage() {
-  const { customer } = useAuth()
-
-  const [step, setStep] = useState<Step>('profile')
-  const [packageCode, setPackageCode] = useState('')
-  const [scheduleDays, setScheduleDays] = useState<ServiceDay[]>([])
-  const [activeDay, setActiveDay] = useState<ServiceDay | null>(null)
-  const [note, setNote] = useState('')
-  const [address, setAddress] = useState(customer?.phone ?? '')
-  const [created, setCreated] = useState<string | null>(null)
-
-  const { data: packages } = useApi<Package[]>((signal) => catalogService.listPackages(signal))
-  const allergensQuery = useApi<Allergen[]>((signal) => catalogService.listAllergens(signal))
-  const allergens = allergensQuery.data
-  const passportQuery = useApi<Passport>((signal) => customersService.getPassport(signal))
-
-  const activePackage = useMemo(
-    () => packages?.find((item) => item.code === packageCode) ?? null,
-    [packageCode, packages],
-  )
-
-  // Scoped to the chosen package so options hidden for that package cannot be picked,
-  // and not fetched at all until a package exists.
-  const week = useServiceWeek({
-    package_code: packageCode || undefined,
-    enabled: Boolean(packageCode),
-  })
-  const selection = useDailySelection(week.days.filter((day) => scheduleDays.includes(day.hari)))
-
-  const submit = useAsync((payload: Parameters<typeof ordersService.create>[0]) =>
-    ordersService.create(payload),
-  )
-  const savePassport = useAsync((payload: PassportIn) => customersService.savePassport(payload))
-
-  const selectableDays = week.days.filter((day) => !day.is_past)
-  const activeWeekDay = week.days.find((day) => day.hari === (activeDay ?? scheduleDays[0] ?? null))
-
-  const levelByDay = useMemo(() => {
-    const out: Partial<Record<ServiceDay, SafetyLevel>> = {}
-    for (const day of week.days) {
-      out[day.hari] = worstLevelOrUndefined(day.safety.map((entry) => entry.level))
-    }
-    return out
-  }, [week.days])
-
-  const chosenLevel = worstLevelOrUndefined(selection.resolved.map((item) => item.level))
-  const blockedChosen = selection.resolved.filter((item) => item.level === 'blocked')
-
-  const stepIndex = STEPS.findIndex((item) => item.id === step)
-
-  const canContinuePackage = Boolean(packageCode) && scheduleDays.length > 0
-  const canContinueMenu =
-    scheduleDays.length > 0 && selection.undecided.length === 0 && selection.resolved.length > 0
-
-  /* ── Dietary profile draft ──────────────────────────────────────────────
-     Unedited, the form mirrors the stored passport and the sticky action bar can
-     submit it unchanged. The first tap switches to `draft`, which then owns the
-     values — so a successful save re-seeds from the refreshed passport instead
-     of leaving the screen showing stale state. */
-
-  const [draft, setDraft] = useState<{ codes: string[]; ingredients: string } | null>(null)
-
-  const storedPassport = passportQuery.data
-  const profileCodes = draft?.codes ?? (storedPassport ? criticalCodes(storedPassport) : [])
-  const profileIngredients =
-    draft?.ingredients ?? storedPassport?.avoided_ingredients.join(', ') ?? ''
-
-  const editDraft = (patch: Partial<{ codes: string[]; ingredients: string }>) =>
-    setDraft({ codes: profileCodes, ingredients: profileIngredients, ...patch })
-
-  const toggleCode = (code: string) =>
-    editDraft({
-      codes: profileCodes.includes(code)
-        ? profileCodes.filter((item) => item !== code)
-        : [...profileCodes, code],
-    })
-
-  const handleSaveProfile = async () => {
-    const passport = passportQuery.data
-    if (!passport) return
-
-    const saved = await savePassport.run(
-      buildPassportPayload(passport, profileCodes, profileIngredients),
-    )
-    if (!saved) return
-
-    toast.success('Batasan tersimpan', {
-      description: `${saved.critical_codes.length} batasan dipakai saat memeriksa menu.`,
-    })
-    passportQuery.refetch()
-    week.refetch()
-    setStep('package')
-  }
-
-  /* ── Navigation ──────────────────────────────────────────────────────── */
-
-  const toggleDay = (hari: ServiceDay) => {
-    const next = scheduleDays.includes(hari)
-      ? scheduleDays.filter((item) => item !== hari)
-      : // Keep the service week's Monday-first order so the payload is deterministic.
-        selectableDays
-          .filter((day) => day.hari === hari || scheduleDays.includes(day.hari))
-          .map((day) => day.hari)
-
-    if (next.length === 0) return
-    setScheduleDays(next)
-    if (activeDay && !next.includes(activeDay)) setActiveDay(next[0])
-    selection.clear()
-  }
-
-  const goBack = () => {
-    if (step === 'menu') setStep('package')
-    else if (step === 'review') setStep('menu')
-    else setStep('profile')
-  }
-
-  const handleSubmit = async () => {
-    const result = await submit.run({
-      package_code: packageCode,
-      schedule_days: scheduleDays,
-      selections: selection.toInput(),
-      customer_note: note.trim() || undefined,
-      delivery_address: address.trim() || undefined,
-      apply_passport: true,
-    })
-
-    if (result) {
-      setCreated(result.order_id)
-      toast.success('Pesanan terkirim', {
-        description: `${result.selections.length} menu masuk ke dapur.`,
-      })
-    }
-  }
-
-  if (created) {
-    return <OrderDone orderId={created} selections={selection.resolved} />
-  }
-
-  return (
-    <div className="mx-auto w-full max-w-2xl">
-      <ProgressHeader stepIndex={stepIndex} title={STEPS[stepIndex].title} onBack={goBack} />
-
-      <div className="space-y-4 px-4 py-5 sm:px-6">
-        {step === 'profile' && (
-          <PageState
-            loading={passportQuery.loading || allergensQuery.loading}
-            error={passportQuery.error ?? allergensQuery.error}
-            skeletonRows={3}
-            onRetry={passportQuery.refetch}
-          >
-            {passportQuery.data && allergens && (
-              <div className="space-y-5">
-                <p className="text-sm text-ink-soft">
-                  Semua status aman di langkah berikutnya dihitung dari batasan yang kamu pilih di
-                  sini.
-                </p>
-
-                <section className="space-y-2">
-                  <h2 className="text-sm font-bold uppercase tracking-wide text-muted-text">
-                    Yang harus dihindari
-                  </h2>
-
-                  {allergens.filter((item) => item.active).length === 0 ? (
-                    <p className="text-sm text-muted-text">Katalog allergen masih kosong.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {allergens
-                        .filter((item) => item.active)
-                        .map((item) => {
-                          const active = profileCodes.includes(item.code)
-                          return (
-                            <Button
-                              key={item.code}
-                              type="button"
-                              size="lg"
-                              variant={active ? 'default' : 'outline'}
-                              aria-pressed={active}
-                              onClick={() => toggleCode(item.code)}
-                              className="rounded-full"
-                            >
-                              {active && <Check aria-hidden="true" className="size-3.5" />}
-                              {item.label}
-                            </Button>
-                          )
-                        })}
-                    </div>
-                  )}
-
-                  <p className="text-xs text-muted-text">
-                    Yang dipilih dicatat sebagai alergi, jadi menu yang mengandung bahan itu diblokir
-                    total.{' '}
-                    <Link
-                      to="/passport"
-                      className="font-semibold text-forest-700 underline underline-offset-2"
-                    >
-                      Atur rinci di Preferensi Makanan
-                    </Link>
-                  </p>
-                </section>
-
-                <section className="space-y-1.5">
-                  <Label htmlFor="profile-ingredients">Bahan lain yang dihindari</Label>
-                  <Input
-                    id="profile-ingredients"
-                    value={profileIngredients}
-                    onChange={(event) => editDraft({ ingredients: event.target.value })}
-                    placeholder="MSG, jahe, gula"
-                  />
-                  <p className="text-xs text-muted-text">
-                    Pisahkan dengan koma. Diteruskan ke dapur sebagai catatan.
-                  </p>
-                </section>
-
-                {profileCodes.length > 0 && (
-                  <SafetyCallout
-                    level="caution"
-                    title={`${profileCodes.length} batasan aktif`}
-                    description="Menu yang mengandung bahan itu ditandai Diblokir dan tidak bisa dipilih di langkah berikutnya."
-                  />
-                )}
-
-                {savePassport.error && (
-                  <SafetyCallout
-                    level="blocked"
-                    title="Batasan gagal disimpan"
-                    description={getErrorMessage(savePassport.error)}
-                  />
-                )}
-              </div>
-            )}
-          </PageState>
-        )}
-
-        {step === 'package' && (
-          <div className="space-y-5">
-            <section className="space-y-2">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-muted-text">Paket</h2>
-
-              {(packages ?? []).map((item) => {
-                const active = item.code === packageCode
-                return (
-                  <button
-                    key={item.code}
-                    type="button"
-                    onClick={() => {
-                      setPackageCode(item.code)
-                      setScheduleDays([])
-                      selection.clear()
-                    }}
-                    aria-pressed={active}
-                    className={cn(
-                      'flex w-full items-start gap-3 rounded-xl border bg-surface p-4 text-left transition-colors',
-                      active
-                        ? 'border-forest-600 ring-1 ring-forest-600'
-                        : 'border-line hover:border-line-strong',
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2',
-                        active
-                          ? 'border-forest-600 bg-forest-600 text-white'
-                          : 'border-line text-transparent',
-                      )}
-                    >
-                      <Check className="size-3" />
-                    </span>
-
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-display text-base font-bold text-ink">
-                        {item.name}
-                      </span>
-                      {item.description && (
-                        <span className="mt-0.5 block text-sm text-muted-text">
-                          {item.description}
-                        </span>
-                      )}
-                      <span className="mt-1 block text-xs font-semibold text-forest-700">
-                        {item.days.length} hari layanan
-                      </span>
-                    </span>
-
-                    <span className="shrink-0 text-right text-sm font-bold text-ink">
-                      {item.price === null ? 'Belum ada harga' : formatIDR(item.price)}
-                    </span>
-                  </button>
-                )
-              })}
-
-              {packages && packages.length === 0 && <WeekEmptyCard hasDays={false} />}
-            </section>
-
-            {activePackage && (
-              <section className="space-y-2">
-                <h2 className="text-sm font-bold uppercase tracking-wide text-muted-text">
-                  Hari yang mau diisi
-                </h2>
-                <div className="flex flex-wrap gap-2">
-                  {activePackage.days.map((hari) => {
-                    const active = scheduleDays.includes(hari)
-                    return (
-                      <Button
-                        key={hari}
-                        type="button"
-                        variant={active ? 'default' : 'outline'}
-                        aria-pressed={active}
-                        onClick={() => toggleDay(hari)}
-                        className="min-w-16"
-                      >
-                        {DAY_SHORT[hari]}
-                      </Button>
-                    )
-                  })}
-                </div>
-                {scheduleDays.length === 0 && (
-                  <p className="text-sm text-muted-text">Pilih minimal satu hari.</p>
-                )}
-              </section>
-            )}
-          </div>
-        )}
-
-        {step === 'menu' && (
-          <PageState loading={week.loading} error={week.error} skeletonRows={3} onRetry={week.refetch}>
-            <div className="space-y-4">
-              <WeekStrip
-                days={week.days.filter((day) => scheduleDays.includes(day.hari))}
-                active={activeWeekDay?.hari ?? null}
-                onSelect={setActiveDay}
-                levelByDay={levelByDay}
-              />
-
-              {selection.undecided.length > 0 && (
-                <p className="text-sm font-medium text-caution-strong">
-                  {selection.undecided.length} hari belum memilih menu —{' '}
-                  {selection.undecided.map((day) => DAY_SHORT[day.hari]).join(', ')}.
-                </p>
-              )}
-
-              {activeWeekDay && activeWeekDay.options.length > 0 ? (
-                <DayOptionsList
-                  day={activeWeekDay}
-                  selectable
-                  selectedMenuId={selection.choices[activeWeekDay.hari]}
-                  onSelect={(menuId) => selection.choose(activeWeekDay.hari, menuId)}
-                />
-              ) : (
-                <WeekEmptyCard hasDays={Boolean(activeWeekDay)} />
-              )}
-            </div>
-          </PageState>
-        )}
-
-        {step === 'review' && (
-          <div className="space-y-4">
-            {chosenLevel && chosenLevel !== 'safe' && (
-              <SafetyCallout
-                level={blockedChosen.length > 0 ? 'blocked' : 'caution'}
-                title={
-                  blockedChosen.length > 0
-                    ? `${blockedChosen.length} menu tidak cocok dengan batasanmu`
-                    : 'Sebagian menu perlu perhatian'
-                }
-                description="Pesanan dengan alergen kritis yang bertabrakan ditolak backend. Ganti menunya untuk hari tersebut."
-              />
-            )}
-
-            <section className="overflow-hidden rounded-xl border border-line bg-surface">
-              <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-                <h2 className="text-base">Ringkasan</h2>
-                {chosenLevel && <SafetyBadge level={chosenLevel} />}
-              </div>
-
-              <dl className="divide-y divide-line text-sm">
-                <Row label="Paket" value={activePackage?.name ?? packageCode} />
-                <Row
-                  label="Harga"
-                  value={
-                    activePackage?.price == null
-                      ? 'Belum ditetapkan'
-                      : formatIDR(activePackage.price)
-                  }
-                />
-                <Row label="Jumlah hari" value={`${scheduleDays.length} hari`} />
-                <Row
-                  label="Batasan dipakai"
-                  value={
-                    week.week?.applied_codes.length
-                      ? `${week.week.applied_codes.length} kode`
-                      : 'Tidak ada'
-                  }
-                />
-              </dl>
-
-              <ul className="divide-y divide-line border-t border-line">
-                {selection.resolved.map((item) => (
-                  <li key={item.hari} className="flex items-center gap-3 px-4 py-2.5">
-                    <span className="w-9 shrink-0 text-xs font-bold uppercase tracking-wide text-muted-text">
-                      {DAY_SHORT[item.hari]}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
-                      {item.nama_menu}
-                    </span>
-                    {item.level && <SafetyBadge level={item.level} size="sm" />}
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="order-address">Alamat / nomor kontak</Label>
-                <Textarea
-                  id="order-address"
-                  value={address}
-                  onChange={(event) => setAddress(event.target.value)}
-                  placeholder="Kantor Lt. 3, Jl. Sudirman, atau 0812…"
-                  rows={2}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="order-note">Catatan untuk dapur</Label>
-                <Textarea
-                  id="order-note"
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  placeholder="Mis. toples pisahkan, tidak pedas"
-                  rows={2}
-                />
-              </div>
-            </section>
-
-            {submit.error && (
-              <SafetyCallout
-                level="blocked"
-                title="Pesanan ditolak"
-                description={getErrorMessage(submit.error)}
-                guidance={
-                  submit.error.code === 'conflict'
-                    ? 'Ubah pilihan menu lalu coba lagi.'
-                    : undefined
-                }
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      <ActionBar step={step} stepIndex={stepIndex}>
-        {step === 'profile' ? (
-          <>
-            <Button variant="ghost" onClick={() => setStep('package')}>
-              Lewati
-            </Button>
-            <Button
-              size="lg"
-              className="flex-1"
-              disabled={savePassport.pending}
-              onClick={() => void handleSaveProfile()}
-            >
-              {savePassport.pending ? (
-                <>
-                  <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-                  Menyimpan…
-                </>
-              ) : (
-                <>
-                  <ShieldCheck aria-hidden="true" className="size-4" />
-                  Simpan & lanjut
-                </>
-              )}
-            </Button>
-          </>
-        ) : (
-          <>
-            {step === 'review' && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-ink">
-                  {activePackage?.price == null ? 'Harga menyusul' : formatIDR(activePackage.price)}
-                </p>
-                <p className="text-xs text-muted-text">{scheduleDays.length} hari</p>
-              </div>
-            )}
-
-            <Button
-              size="lg"
-              className="flex-1"
-              disabled={
-                step === 'package'
-                  ? !canContinuePackage
-                  : step === 'menu'
-                    ? !canContinueMenu
-                    : submit.pending || selection.resolved.length === 0
-              }
-              onClick={() => {
-                if (step === 'package') setStep('menu')
-                else if (step === 'menu') setStep('review')
-                else void handleSubmit()
-              }}
-            >
-              {step === 'review' ? (
-                submit.pending ? (
-                  <>
-                    <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-                    Mengirim…
-                  </>
-                ) : (
-                  <>
-                    <Lock aria-hidden="true" className="size-4" />
-                    Kirim pesanan
-                  </>
-                )
-              ) : (
-                <>
-                  {step === 'package' ? 'Pilih menu' : 'Tinjau pesanan'}
-                  <ArrowRight aria-hidden="true" className="size-4" />
-                </>
-              )}
-            </Button>
-          </>
-        )}
-      </ActionBar>
-    </div>
-  )
-}
-
-/* ── Pieces ──────────────────────────────────────────────────────────────── */
-
-function ProgressHeader({
-  stepIndex,
-  title,
-  onBack,
-}: {
-  stepIndex: number
-  title: string
-  onBack: () => void
-}) {
-  return (
-    <div className="sticky top-0 z-20 border-b border-line bg-canvas/95 backdrop-blur">
-      <div className="flex items-center gap-2 px-4 pt-3 sm:px-6">
-        {stepIndex > 0 ? (
-          <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Langkah sebelumnya">
-            <ChevronLeft aria-hidden="true" className="size-5" />
-          </Button>
-        ) : (
-          <span className="size-8 shrink-0" />
-        )}
-
-        <div className="min-w-0 flex-1 pb-1">
-          <p className="text-[0.6875rem] font-bold uppercase tracking-wide text-muted-text">
-            Langkah {stepIndex + 1} dari {STEPS.length}
-          </p>
-          <h1 className="truncate text-lg leading-tight">{title}</h1>
-        </div>
-      </div>
-
-      <div className="flex gap-1 px-4 pb-2.5 sm:px-6" aria-hidden="true">
-        {STEPS.map((item, index) => (
-          <span
-            key={item.id}
-            className={cn(
-              'h-1 flex-1 rounded-full transition-colors',
-              index <= stepIndex ? 'bg-forest-600' : 'bg-line',
-            )}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ActionBar({
-  step,
-  stepIndex,
-  children,
-}: {
-  step: Step
-  stepIndex: number
-  children: ReactNode
-}) {
-  return (
-    <div
-      data-step={step}
-      data-step-index={stepIndex}
-      className="sticky bottom-0 z-20 flex items-center gap-2 border-t border-line bg-canvas/95 px-4 py-3 backdrop-blur sm:px-6"
-    >
-      {children}
-    </div>
-  )
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-      <dt className="text-muted-text">{label}</dt>
-      <dd className="truncate font-semibold text-ink">{value}</dd>
-    </div>
-  )
-}
-
-function OrderDone({ orderId, selections }: { orderId: string; selections: DaySelection[] }) {
+  const { customer, isAuthenticated, logout } = useAuth()
   const navigate = useNavigate()
 
+  // Data fetching
+  const { data: menuData } = useApi<Menu[]>((signal) =>
+    catalogService.listMenus(signal)
+  )
+  const menuList = useMemo(() => (Array.isArray(menuData) ? menuData : []), [menuData])
+
+  const { data: passport } = useApi<Passport>(
+    (signal) => customersService.getPassport(signal),
+    { enabled: isAuthenticated }
+  )
+  const { data: allergenData } = useApi<Allergen[]>((signal) =>
+    catalogService.listAllergens(signal)
+  )
+  const allergenList = useMemo(() => (Array.isArray(allergenData) ? allergenData : []), [allergenData])
+  void allergenList
+
+  // Filters & Search
+  const [selectedDay, setSelectedDay] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [favorites, setFavorites] = useState<string[]>([])
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([])
+
+  // Load customer likes and recommendations for precision personalization
+  useEffect(() => {
+    const cid = customer?.customer_id || 'cust_ml_001'
+    customersService
+      .getLikes(cid)
+      .then((likedIds) => {
+        if (Array.isArray(likedIds) && likedIds.length > 0) {
+          setFavorites(likedIds)
+        }
+      })
+      .catch(() => null)
+
+    customersService
+      .getRecommendations(cid)
+      .then((recs) => {
+        if (Array.isArray(recs)) {
+          setAiRecommendations(recs)
+        }
+      })
+      .catch(() => null)
+  }, [customer])
+
+  // Cart & UI State
+  const [cart, setCart] = useState<Record<string, CartItem>>({})
+  const [isCartOpen, setIsCartOpen] = useState(false)
+  const [isSideMenuOpen, setIsSideMenuOpen] = useState(false)
+
+  // SweetAlert: Post-Login Dietary Profile Dialog
+  const [showDietaryAlert, setShowDietaryAlert] = useState(false)
+
+  // SweetAlert: Allergen Conflict Warning Dialog
+  const [conflictMenu, setConflictMenu] = useState<{
+    menu: Menu
+    matchedAllergens: string[]
+  } | null>(null)
+
+  // Checkout & Payment State
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false)
+  const [paymentTimer, setPaymentTimer] = useState(600) // 10 minutes in seconds
+  const [paymentDone, setPaymentDone] = useState(false)
+  const [selectedAddress, setSelectedAddress] = useState('home')
+  const [courierNotes, setCourierNotes] = useState('Titip di depan pintu/resepsionis.')
+  const [paymentMethod, setPaymentMethod] = useState<'qris' | 'va'>('qris')
+
+  // Check and show post-login dietary alert once per session
+  useEffect(() => {
+    if (isAuthenticated) {
+      const hasShown = sessionStorage.getItem('dova_dietary_popup_seen')
+      if (!hasShown) {
+        setShowDietaryAlert(true)
+      }
+    }
+  }, [isAuthenticated])
+
+
+  // Payment Countdown Timer
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>
+    if (isPaymentOpen && !paymentDone && paymentTimer > 0) {
+      interval = setInterval(() => {
+        setPaymentTimer((prev) => prev - 1)
+      }, 1000)
+    }
+    return () => clearInterval(interval)
+  }, [isPaymentOpen, paymentDone, paymentTimer])
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  }
+
+  // Active customer allergens
+  const userAllergens = useMemo(() => {
+    if (!passport) return []
+    const list: string[] = []
+    if (passport.allergies) {
+      passport.allergies.forEach((a) => list.push(a.label))
+    }
+    if (passport.avoided_ingredients) {
+      passport.avoided_ingredients.forEach((i) => list.push(i))
+    }
+    return list
+  }, [passport])
+
+  // Check if a menu item has allergen conflicts
+  function checkMenuConflict(menu: Menu): string[] {
+    if (userAllergens.length === 0) return []
+    const conflicts: string[] = []
+    const menuContent = [
+      menu.nama_menu,
+      menu.deskripsi,
+      ...menu.bahan_detail.map((b) => `${b.nama} ${b.potensi_alergen}`),
+      ...menu.allergen_labels,
+    ]
+      .join(' ')
+      .toLowerCase()
+
+    for (const alg of userAllergens) {
+      const algLower = alg.toLowerCase()
+      if (menuContent.includes(algLower)) {
+        conflicts.push(alg)
+      }
+    }
+    return Array.from(new Set(conflicts))
+  }
+
+  // Handle Add to Cart with Allergen Conflict Check
+  function handleAddToCartClick(menu: Menu) {
+    const conflicts = checkMenuConflict(menu)
+
+    // Jika ada bentrok dengan profil alergi user -> Munculkan SweetAlert peringatan!
+    if (conflicts.length > 0) {
+      setConflictMenu({ menu, matchedAllergens: conflicts })
+      return
+    }
+
+    // Jika aman -> Tambahkan langsung ke keranjang
+    executeAddToCart(menu, false, [])
+  }
+
+  function executeAddToCart(menu: Menu, riskAccepted: boolean, matchedAllergens: string[]) {
+    setCart((prev) => {
+      const existing = prev[menu.menu_id]
+      const newQty = existing ? existing.quantity + 1 : 1
+      return {
+        ...prev,
+        [menu.menu_id]: {
+          menu,
+          quantity: newQty,
+          riskAccepted,
+          matchedAllergens,
+        },
+      }
+    })
+
+    // Catat interaksi keranjang ke Supabase untuk AI ML
+    const cid = customer?.customer_id || 'cust_ml_001'
+    customersService
+      .trackCartEvent({
+        menu_id: menu.menu_id,
+        quantity: 1,
+        action: 'add',
+        customer_id: cid,
+      })
+      .catch(() => null)
+
+    toast.success(`${menu.nama_menu} ditambahkan ke keranjang!`, {
+      description: `Porsi: ${cart[menu.menu_id] ? cart[menu.menu_id].quantity + 1 : 1}x (${menu.hari})`,
+    })
+
+    setConflictMenu(null)
+  }
+
+  function updateQuantity(menuId: string, delta: number) {
+    const cid = customer?.customer_id || 'cust_ml_001'
+    customersService
+      .trackCartEvent({
+        menu_id: menuId,
+        quantity: Math.abs(delta),
+        action: delta > 0 ? 'add' : 'remove',
+        customer_id: cid,
+      })
+      .catch(() => null)
+
+    setCart((prev) => {
+      const existing = prev[menuId]
+      if (!existing) return prev
+      const updatedQty = existing.quantity + delta
+      if (updatedQty <= 0) {
+        const next = { ...prev }
+        delete next[menuId]
+        return next
+      }
+      return {
+        ...prev,
+        [menuId]: { ...existing, quantity: updatedQty },
+      }
+    })
+  }
+
+  async function toggleFavorite(menuId: string) {
+    const isCurrentlyFav = favorites.includes(menuId)
+    setFavorites((prev) =>
+      isCurrentlyFav ? prev.filter((id) => id !== menuId) : [...prev, menuId]
+    )
+    const cid = customer?.customer_id || 'cust_ml_001'
+    try {
+      const res = await customersService.toggleLike(menuId, cid)
+      if (res.liked) {
+        toast.success('Disukai! AI Chef mencatat preferensimu untuk rekomendasi presisi.', {
+          icon: '❤️',
+        })
+      }
+    } catch {
+      // silent fallback
+    }
+  }
+
+
+  // Filtered menus
+  const filteredMenus = useMemo(() => {
+    return menuList.filter((m) => {
+      const matchDay = selectedDay === 'all' || m.hari === selectedDay
+      const matchSearch =
+        searchQuery.trim() === '' ||
+        m.nama_menu.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.deskripsi.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.bahan_detail.some((b) => b.nama.toLowerCase().includes(searchQuery.toLowerCase()))
+      return matchDay && matchSearch
+    })
+  }, [menuList, selectedDay, searchQuery])
+
+  // Cart calculations
+  const cartItemsArray = Object.values(cart)
+  const cartItemCount = cartItemsArray.reduce((acc, curr) => acc + curr.quantity, 0)
+  const cartSubtotal = cartItemsArray.reduce(
+    (acc, curr) => acc + curr.quantity * PRICE_PER_PORTION,
+    0
+  )
+  const deliveryFee = cartItemCount > 0 ? 0 : 0 // Free ongkir promo
+  const cartGrandTotal = cartSubtotal + deliveryFee
+
+  async function handleSimulatePaymentSuccess() {
+    setPaymentDone(true)
+    toast.success('Pembayaran Berhasil Dikonfirmasi!', {
+      description: 'Dapur Dova Kitchen mulai memproses tiket masak Anda.',
+    })
+
+    // Reset keranjang setelah bayar
+    setTimeout(() => {
+      setIsPaymentOpen(false)
+      setCart({})
+      navigate('/orders')
+    }, 2000)
+  }
+
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6 sm:px-6">
-      <SafetyCallout
-        level="safe"
-        title="Pesanan terkirim ke dapur"
-        description="Setiap hari punya tepat satu menu. Dapur menerima catatan bahan dan alat steril per menu, bukan menu utama hari itu."
-      />
+    <div className="min-h-screen bg-[#FAF7F2] text-stone-900 font-sans flex antialiased selection:bg-rose-500 selection:text-white">
+      {/* ── Desktop Left Sidebar (Matching Image 2 / Bitepoint) ── */}
+      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-stone-200/80 shrink-0 h-screen sticky top-0 justify-between z-20 shadow-2xs">
+        <div>
+          <div className="p-6 pb-5 flex items-center justify-between border-b border-stone-100">
+            <Link to="/" className="flex items-center gap-3">
+              <div className="size-10 rounded-2xl bg-rose-600 flex items-center justify-center text-white font-black shadow-md shadow-rose-600/20 text-lg">
+                DK
+              </div>
+              <div>
+                <span className="font-extrabold text-lg text-stone-900 tracking-tight leading-none block">
+                  dovakitchen
+                </span>
+                <span className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider block mt-0.5">
+                  Precision Catering
+                </span>
+              </div>
+            </Link>
+          </div>
 
-      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
-        {selections.map((item) => (
-          <li key={item.hari} className="flex items-center gap-3 px-4 py-3">
-            <span className="w-9 shrink-0 text-xs font-bold uppercase tracking-wide text-muted-text">
-              {DAY_SHORT[item.hari]}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-ink">{item.nama_menu}</span>
-              <span className="block text-xs text-muted-text">{item.date_label}</span>
-            </span>
-            {item.level && <SafetyBadge level={item.level} size="sm" />}
-          </li>
-        ))}
-      </ul>
+          <nav className="p-4 space-y-2 text-sm font-semibold">
+            <Link
+              to="/order"
+              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl bg-rose-600 text-white font-bold shadow-sm shadow-rose-600/20"
+            >
+              <Utensils className="size-5" />
+              <span>Menu Mingguan</span>
+            </Link>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button onClick={() => navigate(`/orders/${orderId}`)} className="sm:flex-1">
-          Lacak pesanan
-        </Button>
-        <Button asChild variant="outline" className="sm:flex-1">
-          <Link to="/menu">Menu minggu ini</Link>
-        </Button>
+            <Link
+              to="/orders"
+              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-700 hover:bg-stone-100 hover:text-stone-900 transition-all"
+            >
+              <ShoppingBag className="size-5" />
+              <span>Pesanan Saya</span>
+            </Link>
+
+            <Link
+              to="/passport"
+              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-700 hover:bg-stone-100 hover:text-stone-900 transition-all"
+            >
+              <ShieldCheck className="size-5" />
+              <span>Dietary Passport</span>
+              {userAllergens.length > 0 && (
+                <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] bg-rose-100 text-rose-700 font-bold">
+                  {userAllergens.length}
+                </span>
+              )}
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => {
+                const btn = document.querySelector('[aria-label="Tanya Chef BOB"]') as HTMLButtonElement
+                if (btn) btn.click()
+                else navigate('/ai')
+              }}
+              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-700 hover:bg-stone-100 hover:text-stone-900 transition-all text-left"
+            >
+              <Sparkles className="size-5 text-amber-500" />
+              <span>Asisten AI Chef (BOB)</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* User profile footer */}
+        <div className="p-4 border-t border-stone-100">
+          <div className="flex items-center gap-3 p-2 rounded-2xl bg-stone-50 border border-stone-200/60">
+            <div className="size-10 rounded-full bg-rose-100 border border-rose-300 text-rose-900 font-bold flex items-center justify-center text-sm shrink-0">
+              {customer?.display_name?.[0] || 'P'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-stone-900 truncate">
+                {customer?.display_name || customer?.username || 'Pelanggan Dova'}
+              </p>
+              <p className="text-[11px] text-stone-500">
+                {userAllergens.length > 0 ? `${userAllergens.length} Alergi` : 'Diet Sehat'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Center Content Column ── */}
+      <div className="flex-1 flex flex-col min-w-0 pb-20 overflow-y-auto">
+        {/* ── 1. Top Mobile / Desktop Header ───────────────── */}
+        <header className="sticky top-0 z-40 bg-[#FAF7F2]/95 backdrop-blur-md border-b border-stone-200/80 px-4 py-3">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+          {/* Left: Hamburger Menu */}
+          <button
+            type="button"
+            onClick={() => setIsSideMenuOpen(true)}
+            className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-stone-900 active:scale-95 transition-all"
+            aria-label="Menu navigasi"
+          >
+            <MenuIcon className="size-5" />
+          </button>
+
+          {/* Center: Greeting & Brand Logo */}
+          <div className="flex flex-col items-center text-center">
+            <span className="text-[11px] font-medium text-stone-500">
+              Halo, {customer?.display_name || 'Food Lover'}! 👋
+            </span>
+            <div className="flex items-center gap-1.5 font-black text-rose-600 text-lg md:text-xl tracking-tighter">
+              DOVA KITCHEN
+              <span className="inline-block size-1.5 rounded-full bg-rose-600"></span>
+            </div>
+          </div>
+
+          {/* Right: Notification & Cart Bag Icons */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDietaryAlert(true)}
+              className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-rose-600 active:scale-95 transition-all relative"
+              aria-label="Info Alergi"
+              title="Cek Profil Alergi"
+            >
+              <Bell className="size-5" />
+              {userAllergens.length > 0 && (
+                <span className="absolute top-1.5 right-1.5 size-2.5 rounded-full bg-rose-600 border-2 border-white"></span>
+              )}
+            </button>
+
+            {/* Shopping Bag Button with Badge */}
+            <button
+              type="button"
+              onClick={() => setIsCartOpen(true)}
+              className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-rose-600 active:scale-95 transition-all relative"
+              aria-label="Keranjang Belanja"
+            >
+              <ShoppingBag className="size-5" />
+              {cartItemCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white shadow-sm animate-pulse">
+                  {cartItemCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Search Bar (Clean Pill) ────────────────────────────────────────── */}
+        <div className="max-w-6xl mx-auto mt-3">
+          <div className="relative flex items-center">
+            <Search className="absolute left-4 size-4 text-stone-400" />
+            <Input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari menu sehat, bahan, atau pantangan..."
+              className="w-full rounded-full bg-white border-stone-200 pl-11 pr-10 py-2 text-sm shadow-2xs focus-visible:ring-rose-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3.5 text-stone-400 hover:text-stone-600"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── Main Content Area ──────────────────────────────────────────────── */}
+      <main className="max-w-6xl mx-auto px-4 pt-4 space-y-6">
+        {/* ── 2. Hero Promo Banner (Inspired by KFC "CRISPY. JUICY. IRRESISTIBLE.") ── */}
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-red-700 via-rose-700 to-amber-700 p-6 md:p-8 text-white shadow-xl shadow-rose-950/10">
+          <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-25 md:opacity-40 mix-blend-overlay pointer-events-none">
+            <img
+              src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1000&q=80"
+              alt="Culinary"
+              className="h-full w-full object-cover"
+            />
+          </div>
+
+          <div className="relative z-10 max-w-md space-y-3">
+            <Badge className="bg-amber-400 text-stone-950 font-bold uppercase tracking-wider text-[10px] px-2.5 py-0.5">
+              PRESISI ALERGI • 100% HIGIENIS
+            </Badge>
+
+            <h1 className="text-2xl md:text-4xl font-black tracking-tight leading-tight uppercase">
+              SEHAT. NIKMAT. <br />
+              <span className="text-amber-300">AMAN DARI ALERGI.</span>
+            </h1>
+
+            <p className="text-xs md:text-sm text-white/90 font-normal leading-relaxed">
+              Katering harian 3 menu per hari. Dipersiapkan dengan workstation steril terpisah untuk
+              menjamin nol kontaminasi silang.
+            </p>
+
+            <div className="pt-2 flex items-center gap-3">
+              <Button
+                onClick={() => {
+                  setSelectedDay('all')
+                  const el = document.getElementById('food-catalog-grid')
+                  el?.scrollIntoView({ behavior: 'smooth' })
+                }}
+                className="rounded-full bg-white text-rose-700 hover:bg-stone-100 font-bold px-6 shadow-md shadow-rose-950/20 active:scale-95 transition-all text-xs md:text-sm"
+              >
+                Pesan Sekarang →
+              </Button>
+
+              {userAllergens.length > 0 ? (
+                <div className="flex items-center gap-1.5 text-xs text-white/90 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20">
+                  <ShieldCheck className="size-4 text-emerald-300 shrink-0" />
+                  <span className="truncate max-w-[150px]">
+                    Proteksi: {userAllergens.join(', ')}
+                  </span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowDietaryAlert(true)}
+                  className="text-xs text-white/90 underline hover:text-white"
+                >
+                  Atur Pantangan Alergi
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── 3. Category & Day Filter Pills (Horizontal Scroll) ─────────────── */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-stone-800 text-sm md:text-base flex items-center gap-1.5">
+              <span>Jadwal Menu Mingguan</span>
+              <span className="text-xs font-normal text-stone-500">(3 Pilihan / Hari)</span>
+            </h2>
+            <span className="text-xs text-rose-600 font-semibold">Senin — Sabtu</span>
+          </div>
+
+          <div className="flex gap-2.5 overflow-x-auto pb-2 no-scrollbar scroll-smooth">
+            {Object.values(DAYS_LIST).map((day) => {
+              const isActive = selectedDay === day.id
+              return (
+                <button
+                  key={day.id}
+                  onClick={() => setSelectedDay(day.id)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-all duration-200 border active:scale-95',
+                    isActive
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20'
+                      : 'bg-white text-stone-700 border-stone-200/90 hover:border-stone-300 hover:bg-stone-50'
+                  )}
+                >
+                  <span className="text-sm">{day.icon}</span>
+                  <span>{day.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* ── 4. Popular Food Grid (Like "Popular Combos" in KFC App) ───────── */}
+        <div id="food-catalog-grid" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <h2 className="font-black text-stone-900 text-lg tracking-tight">
+                {selectedDay === 'all' ? 'Semua Menu Pilihan Minggu Ini' : `Menu Hari ${selectedDay}`}
+              </h2>
+              <p className="text-xs text-stone-500">
+                Pilih makanan favoritmu dan klik tanda + untuk memesan
+              </p>
+            </div>
+            <span className="text-xs font-bold text-stone-400">
+              {filteredMenus.length} Hidangan Tersedia
+            </span>
+          </div>
+
+          {filteredMenus.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-stone-300 p-12 text-center bg-white space-y-3">
+              <Utensils className="size-10 text-stone-400 mx-auto" />
+              <h3 className="font-bold text-stone-700">Tidak ada menu yang sesuai</h3>
+              <p className="text-xs text-stone-500">Coba ubah kata kunci pencarian atau pilih hari lain.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedDay('all')
+                  setSearchQuery('')
+                }}
+              >
+                Reset Filter
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredMenus.map((menu) => {
+                const conflicts = checkMenuConflict(menu)
+                const hasConflict = conflicts.length > 0
+                const isFavorite = favorites.includes(menu.menu_id)
+                const imageUrl =
+                  MENU_IMAGES[menu.menu_id] || MENU_IMAGES[menu.nama_menu] || DEFAULT_FOOD_IMAGE
+                const cartItem = cart[menu.menu_id]
+                const qtyInCart = cartItem?.quantity || 0
+
+                return (
+                  <Card
+                    key={menu.menu_id}
+                    className="group overflow-hidden rounded-3xl border-stone-200/90 bg-white shadow-2xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between"
+                  >
+                    {/* Top Food Image Container */}
+                    <div className="relative aspect-4/3 w-full overflow-hidden bg-stone-100">
+                      <img
+                        src={imageUrl}
+                        alt={menu.nama_menu}
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        loading="lazy"
+                      />
+
+                      {/* Day Pill Tag & AI Recommendation Tag */}
+                      <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                        <Badge className="bg-stone-900/80 backdrop-blur-md text-white text-[11px] font-semibold border-none">
+                          📅 {menu.hari}
+                        </Badge>
+                        {(() => {
+                          const rec = aiRecommendations.find((r) => r.menu_id === menu.menu_id)
+                          if (rec && rec.score >= 50) {
+                            return (
+                              <Badge className="bg-amber-400 text-stone-950 font-black text-[10px] border-none shadow-xs flex items-center gap-1">
+                                <Sparkles className="size-3 text-stone-900" />
+                                <span>{Math.round(rec.score)}% Match AI</span>
+                              </Badge>
+                            )
+                          }
+                          return null
+                        })()}
+
+                      </div>
+
+                      {/* Allergen Warning / Safe Badge */}
+                      {hasConflict ? (
+                        <Badge className="absolute bottom-3 left-3 bg-rose-600 text-white text-[10px] font-bold border-none shadow-md flex items-center gap-1 animate-pulse">
+                          <ShieldAlert className="size-3" />
+                          <span>Waspada: {conflicts.join(', ')}</span>
+                        </Badge>
+                      ) : userAllergens.length > 0 ? (
+                        <Badge className="absolute bottom-3 left-3 bg-emerald-700 text-white text-[10px] font-bold border-none shadow-md flex items-center gap-1">
+                          <ShieldCheck className="size-3" />
+                          <span>Cocok Untukmu</span>
+                        </Badge>
+                      ) : null}
+
+                      {/* Wishlist Heart Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => toggleFavorite(menu.menu_id)}
+                        className="absolute top-3 right-3 size-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-stone-700 hover:text-rose-600 active:scale-90 transition-all shadow-sm"
+                        aria-label="Favorit"
+                      >
+                        <Heart
+                          className={cn(
+                            'size-4 transition-colors',
+                            isFavorite ? 'fill-rose-600 text-rose-600' : 'text-stone-600'
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Card Content & Details */}
+                    <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between">
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-bold text-stone-900 text-base leading-snug group-hover:text-rose-600 transition-colors">
+                            {menu.nama_menu}
+                          </h3>
+                        </div>
+
+                        {/* Ingredients snippet */}
+                        <p className="text-xs text-stone-500 line-clamp-2 leading-relaxed">
+                          {menu.deskripsi ||
+                            menu.bahan_detail.map((b) => b.nama).join(', ')}
+                        </p>
+
+                        {/* Allergen Tags / Badges */}
+                        {menu.allergen_labels.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {menu.allergen_labels.map((alg) => (
+                              <span
+                                key={alg}
+                                className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200/80 px-2 py-0.5 rounded-full font-medium"
+                              >
+                                {alg}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="pt-1">
+                            <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                              Bebas Alergen Mayor
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Rating & Portion Info */}
+                      <div className="flex items-center gap-2 text-xs text-stone-500 pt-1">
+                        <div className="flex items-center gap-1 font-bold text-stone-700">
+                          <Star className="size-3.5 fill-amber-400 text-amber-400" />
+                          <span>4.9</span>
+                        </div>
+                        <span>•</span>
+                        <span>1 Porsi Standar (450 kkal)</span>
+                      </div>
+
+                      {/* Price & Action Row */}
+                      <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] uppercase font-bold text-stone-400">Harga</div>
+                          <div className="font-black text-base text-stone-900 tracking-tight">
+                            Rp {PRICE_PER_PORTION.toLocaleString('id-ID')}
+                          </div>
+                        </div>
+
+                        {/* Quantity Stepper if in cart, or circular Plus button */}
+                        {qtyInCart > 0 ? (
+                          <div className="flex items-center gap-2 bg-stone-100 rounded-full p-1 border border-stone-200">
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(menu.menu_id, -1)}
+                              className="size-7 rounded-full bg-white flex items-center justify-center text-stone-700 hover:bg-stone-200 active:scale-90 transition-all"
+                            >
+                              <Minus className="size-3.5" />
+                            </button>
+                            <span className="font-bold text-xs px-1 text-stone-900">{qtyInCart}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleAddToCartClick(menu)}
+                              className="size-7 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700 active:scale-90 transition-all shadow-xs"
+                            >
+                              <Plus className="size-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleAddToCartClick(menu)}
+                            className="size-10 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md shadow-rose-600/30 hover:bg-rose-700 hover:scale-105 active:scale-95 transition-all"
+                            aria-label={`Tambah ${menu.nama_menu}`}
+                          >
+                            <Plus className="size-5 stroke-[2.5]" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </main>
       </div>
+
+      {/* ── Desktop Right Column: Order Menu (Cart & Checkout matching Image 2) ── */}
+      <aside className="hidden xl:flex flex-col w-96 bg-white border-l border-stone-200/80 shrink-0 h-screen sticky top-0 p-5 overflow-y-auto justify-between z-10 shadow-2xs">
+        <div className="space-y-4">
+          {/* Your Balance Virtual Card (Image 2 top right) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold text-stone-800">Your Balance</span>
+              <button
+                onClick={() => toast.info('Saldo Dova Pay siap digunakan!')}
+                className="text-[11px] font-bold text-amber-600 hover:underline"
+              >
+                Top Up
+              </button>
+            </div>
+            <div className="rounded-3xl bg-gradient-to-tr from-orange-600 via-amber-600 to-rose-600 p-4 text-white shadow-md relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-200">
+                  Dova Pay Precision
+                </span>
+                <div className="size-6 rounded-md bg-amber-400/40 border border-amber-300 flex items-center justify-center text-[10px]">
+                  💳
+                </div>
+              </div>
+              <div className="my-3 font-mono text-xs tracking-widest text-white/90">
+                •••• •••• •••• 8869
+              </div>
+              <div className="flex justify-between items-end">
+                <div>
+                  <span className="text-[9px] uppercase tracking-wider text-white/70 block">
+                    Saldo Aktif
+                  </span>
+                  <span className="font-extrabold text-sm text-white">Rp 5.285.000</span>
+                </div>
+                <span className="text-[10px] font-mono text-white/80">08/28</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Your Address (Image 2) */}
+          <div className="rounded-2xl bg-stone-50 border border-stone-200/80 p-3.5 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                <MapPin className="size-3.5 text-rose-600" /> Your Address
+              </span>
+              <span
+                onClick={() => setSelectedAddress(selectedAddress === 'home' ? 'office' : 'home')}
+                className="text-[11px] font-bold text-rose-600 cursor-pointer hover:underline"
+              >
+                Change
+              </span>
+            </div>
+            <p className="text-xs font-bold text-stone-900 truncate">
+              {selectedAddress === 'home'
+                ? 'Jl. Senopati Raya No. 42 (Rumah)'
+                : 'Menara Mandiri Lt. 14 (Kantor)'}
+            </p>
+            <p className="text-[10px] text-stone-500">
+              Katering tiba setiap pk 11:30 WIB tepat waktu.
+            </p>
+          </div>
+
+          {/* Order Menu Items List (Image 2 right middle) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between pb-1.5 border-b border-stone-100">
+              <span className="text-xs font-extrabold text-stone-900 flex items-center gap-1.5">
+                <ShoppingBag className="size-3.5 text-rose-600" /> Order Menu
+              </span>
+              <Badge className="bg-rose-100 text-rose-700 text-[10px] font-bold">
+                {cartItemCount} Items
+              </Badge>
+            </div>
+
+            <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+              {cartItemsArray.length === 0 ? (
+                <div className="text-center py-8 text-xs text-stone-400">
+                  Keranjangmu kosong. Klik tanda '+' untuk memilih menu.
+                </div>
+              ) : (
+                cartItemsArray.map(({ menu, quantity }) => (
+                  <div
+                    key={menu.menu_id}
+                    className="flex items-center justify-between gap-2.5 p-2 rounded-2xl bg-stone-50 border border-stone-200/60"
+                  >
+                    <img
+                      src={
+                        MENU_IMAGES[menu.menu_id] ||
+                        MENU_IMAGES[menu.nama_menu] ||
+                        DEFAULT_FOOD_IMAGE
+                      }
+                      alt={menu.nama_menu}
+                      className="size-11 rounded-xl object-cover shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-stone-900 truncate">{menu.nama_menu}</p>
+                      <p className="text-[11px] font-black text-rose-600">
+                        Rp {(PRICE_PER_PORTION * quantity).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 bg-white rounded-full p-0.5 border border-stone-200">
+                      <button
+                        onClick={() => updateQuantity(menu.menu_id, -1)}
+                        className="size-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-stone-100"
+                      >
+                        <Minus className="size-2.5" />
+                      </button>
+                      <span className="text-xs font-bold px-1">{quantity}</span>
+                      <button
+                        onClick={() => handleAddToCartClick(menu)}
+                        className="size-5 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700"
+                      >
+                        <Plus className="size-2.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Pricing breakdown & Checkout Button (Image 2 bottom right) */}
+        {cartItemsArray.length > 0 && (
+          <div className="space-y-2.5 pt-3 border-t border-stone-200 text-xs">
+            <div className="flex justify-between text-stone-600">
+              <span>Subtotal ({cartItemCount} porsi):</span>
+              <span className="font-bold text-stone-900">
+                Rp {cartSubtotal.toLocaleString('id-ID')}
+              </span>
+            </div>
+            <div className="flex justify-between text-emerald-600">
+              <span>Delivery Service:</span>
+              <span className="font-bold">FREE</span>
+            </div>
+            <div className="flex justify-between text-sm font-black text-stone-900 pt-1.5 border-t border-stone-100">
+              <span>Total:</span>
+              <span className="text-rose-600 text-base">
+                Rp {cartGrandTotal.toLocaleString('id-ID')}
+              </span>
+            </div>
+
+            <Button
+              onClick={() => {
+                setIsPaymentOpen(true)
+                setPaymentTimer(600)
+                setPaymentDone(false)
+              }}
+              className="w-full rounded-2xl bg-amber-500 hover:bg-amber-600 text-stone-950 font-black h-11 text-xs shadow-md shadow-amber-500/20 mt-1"
+            >
+              Checkout / Bayar Sekarang →
+            </Button>
+          </div>
+        )}
+      </aside>
+
+      {/* ── 5. SweetAlert: Post-Login Dietary Profile Dialog ───────────────── */}
+      {showDietaryAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border-none animate-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-red-600 to-rose-700 p-6 text-white text-center relative">
+              <div className="size-14 rounded-2xl bg-white/20 backdrop-blur-md mx-auto flex items-center justify-center mb-3">
+                <ShieldCheck className="size-8 text-amber-300" />
+              </div>
+              <h3 className="font-black text-xl tracking-tight">Status Profil Alergi Aktif</h3>
+              <p className="text-xs text-white/80 mt-1">
+                Halo {customer?.display_name || 'Pelanggan'}! Kami menjaga keamanan makananmu.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4 space-y-2">
+                <div className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
+                  Alergi yang Tercatat di Akunmu:
+                </div>
+                {userAllergens.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {userAllergens.map((alg) => (
+                      <Badge
+                        key={alg}
+                        className="bg-rose-100 text-rose-800 border-rose-300 text-xs px-2.5 py-1"
+                      >
+                        ⚠️ {alg}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-stone-600">
+                    <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                    <span>Belum ada pantangan alergi yang dicatat.</span>
+                  </div>
+                )}
+                <p className="text-[11px] text-stone-400 pt-1 leading-relaxed">
+                  Sistem kami akan otomatis memblokir / memberi peringatan jika kamu memilih menu yang
+                  mengandung bahan alergen di atas.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <Button
+                  onClick={() => {
+                    sessionStorage.setItem('dova_dietary_popup_seen', 'true')
+                    setShowDietaryAlert(false)
+                  }}
+                  className="rounded-full bg-rose-600 hover:bg-rose-700 text-white font-bold h-11 text-sm shadow-md shadow-rose-600/20"
+                >
+                  Lanjut Pesan Makanan 🍽️
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    sessionStorage.setItem('dova_dietary_popup_seen', 'true')
+                    setShowDietaryAlert(false)
+                    navigate('/passport')
+                  }}
+                  className="rounded-full border-stone-300 text-stone-700 h-10 text-xs font-semibold"
+                >
+                  Perbarui / Tambah Alergi di Profil ⚙️
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── 6. SweetAlert: Conflict Warning Dialog (When Clicking + on Risk Item) ── */}
+      {conflictMenu && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border-none animate-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-red-600 to-rose-800 p-6 text-white text-center">
+              <div className="size-14 rounded-2xl bg-white/20 backdrop-blur-md mx-auto flex items-center justify-center mb-3 animate-bounce">
+                <ShieldAlert className="size-8 text-amber-300" />
+              </div>
+              <h3 className="font-black text-xl tracking-tight">PERINGATAN ALERGI!</h3>
+              <p className="text-xs text-white/80 mt-1">
+                Menu ini bertentangan dengan profil kesehatanmu
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 space-y-2">
+                <div className="font-bold text-sm text-rose-950">
+                  {conflictMenu.menu.nama_menu}
+                </div>
+                <div className="text-xs text-rose-800 leading-relaxed">
+                  Menu ini mengandung bahan yang bentrok dengan alergimu:
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {conflictMenu.matchedAllergens.map((alg) => (
+                    <Badge
+                      key={alg}
+                      className="bg-rose-600 text-white font-bold text-xs px-2.5 py-1 border-none"
+                    >
+                      ⚠️ {alg}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-[11px] text-rose-700 pt-2 leading-relaxed">
+                  Dapur Dova Kitchen menyarankan untuk menghindari menu ini demi keselamatanmu. Bila
+                  tetap memesan, tiket dapur akan ditandai dengan sorotan risiko khusus.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <Button
+                  onClick={() => setConflictMenu(null)}
+                  variant="outline"
+                  className="rounded-full border-stone-300 text-stone-700 h-11 text-sm font-semibold"
+                >
+                  Batalkan & Pilih Menu Lain
+                </Button>
+
+                <Button
+                  onClick={() => executeAddToCart(conflictMenu.menu, true, conflictMenu.matchedAllergens)}
+                  className="rounded-full bg-rose-600 hover:bg-rose-700 text-white font-bold h-11 text-xs shadow-md shadow-rose-600/20"
+                >
+                  Saya Paham Risikonya, Tetap Tambahkan
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── 7. Shopping Cart Drawer (Slide-Over Sheet) ──────────────────────── */}
+      {isCartOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-stone-950/50 backdrop-blur-2xs transition-opacity"
+            onClick={() => setIsCartOpen(false)}
+          />
+
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+            <div className="w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between rounded-l-3xl overflow-hidden animate-in slide-in-from-right duration-300">
+              {/* Cart Header */}
+              <div className="p-5 border-b border-stone-200 flex items-center justify-between bg-stone-50">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag className="size-5 text-rose-600" />
+                  <h3 className="font-bold text-lg text-stone-900">Keranjang Pesanan</h3>
+                  <Badge className="bg-rose-100 text-rose-700 text-xs">{cartItemCount} item</Badge>
+                </div>
+                <button
+                  onClick={() => setIsCartOpen(false)}
+                  className="size-8 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:text-stone-800"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              {/* Cart Items List */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {cartItemsArray.length === 0 ? (
+                  <div className="py-16 text-center space-y-3">
+                    <ShoppingBag className="size-12 text-stone-300 mx-auto" />
+                    <h4 className="font-bold text-stone-700">Keranjangmu masih kosong</h4>
+                    <p className="text-xs text-stone-500">Pilih menu mingguan lezat di katalog.</p>
+                    <Button
+                      onClick={() => setIsCartOpen(false)}
+                      className="rounded-full bg-rose-600 text-white text-xs font-bold"
+                    >
+                      Mulai Memilih
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-3">
+                      {cartItemsArray.map(({ menu, quantity, riskAccepted, matchedAllergens }) => (
+                        <div
+                          key={menu.menu_id}
+                          className="flex gap-3 p-3 rounded-2xl border border-stone-200 bg-white shadow-2xs items-center justify-between"
+                        >
+                          <img
+                            src={
+                              MENU_IMAGES[menu.menu_id] ||
+                              MENU_IMAGES[menu.nama_menu] ||
+                              DEFAULT_FOOD_IMAGE
+                            }
+                            alt={menu.nama_menu}
+                            className="size-16 rounded-xl object-cover shrink-0"
+                          />
+
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <Badge className="bg-stone-100 text-stone-700 text-[10px] px-1.5 py-0">
+                                {menu.hari}
+                              </Badge>
+                              {riskAccepted && (
+                                <Badge className="bg-rose-100 text-rose-700 text-[9px] px-1 py-0">
+                                  ⚠️ {matchedAllergens.join(', ')}
+                                </Badge>
+                              )}
+                            </div>
+                            <h4 className="font-bold text-xs text-stone-900 truncate">
+                              {menu.nama_menu}
+                            </h4>
+                            <div className="font-black text-xs text-rose-600">
+                              Rp {(PRICE_PER_PORTION * quantity).toLocaleString('id-ID')}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 bg-stone-100 rounded-full p-1 border border-stone-200 shrink-0">
+                            <button
+                              onClick={() => updateQuantity(menu.menu_id, -1)}
+                              className="size-6 rounded-full bg-white flex items-center justify-center text-stone-700 hover:bg-stone-200"
+                            >
+                              <Minus className="size-3" />
+                            </button>
+                            <span className="font-bold text-xs px-1 text-stone-900">{quantity}</span>
+                            <button
+                              onClick={() => handleAddToCartClick(menu)}
+                              className="size-6 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700"
+                            >
+                              <Plus className="size-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Delivery Address Selection */}
+                    <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                          <MapPin className="size-3.5 text-rose-600" /> Alamat Pengantaran
+                        </span>
+                        <span className="text-[11px] text-rose-600 font-semibold cursor-pointer">
+                          Ubah
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAddress('home')}
+                          className={cn(
+                            'rounded-xl p-2.5 text-left border text-xs transition-all',
+                            selectedAddress === 'home'
+                              ? 'bg-rose-50 border-rose-300 text-rose-900 font-semibold'
+                              : 'bg-white border-stone-200 text-stone-600'
+                          )}
+                        >
+                          <div className="font-bold">🏠 Rumah (Utama)</div>
+                          <div className="text-[10px] text-stone-500 truncate">Jl. Senopati Raya No. 42</div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAddress('office')}
+                          className={cn(
+                            'rounded-xl p-2.5 text-left border text-xs transition-all',
+                            selectedAddress === 'office'
+                              ? 'bg-rose-50 border-rose-300 text-rose-900 font-semibold'
+                              : 'bg-white border-stone-200 text-stone-600'
+                          )}
+                        >
+                          <div className="font-bold">🏢 Kantor</div>
+                          <div className="text-[10px] text-stone-500 truncate">Menara Mandiri Lt. 14</div>
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-stone-500 font-medium">Catatan Kurir:</label>
+                        <Input
+                          value={courierNotes}
+                          onChange={(e) => setCourierNotes(e.target.value)}
+                          className="h-8 text-xs mt-1 rounded-lg bg-white"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Cart Footer */}
+              {cartItemsArray.length > 0 && (
+                <div className="p-5 border-t border-stone-200 bg-white space-y-3 shadow-lg">
+                  <div className="space-y-1.5 text-xs text-stone-600">
+                    <div className="flex justify-between">
+                      <span>Subtotal ({cartItemCount} porsi)</span>
+                      <span className="font-bold text-stone-900">
+                        Rp {cartSubtotal.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-emerald-600">
+                      <span>Ongkos Kirim Harian</span>
+                      <span className="font-bold">GRATIS</span>
+                    </div>
+                    <div className="flex justify-between font-black text-sm text-stone-900 pt-2 border-t border-stone-100">
+                      <span>Total Pembayaran</span>
+                      <span className="text-rose-600 text-base">
+                        Rp {cartGrandTotal.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={() => {
+                      setIsCartOpen(false)
+                      setIsPaymentOpen(true)
+                      setPaymentTimer(600)
+                      setPaymentDone(false)
+                    }}
+                    className="w-full rounded-full bg-rose-600 hover:bg-rose-700 text-white font-bold h-12 shadow-lg shadow-rose-600/30 text-sm"
+                  >
+                    Bayar Sekarang (Rp {cartGrandTotal.toLocaleString('id-ID')}) →
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 8. Payment Modal (QRIS & VA Simulation) ────────────────────────── */}
+      {isPaymentOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl border-none animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-600 to-rose-700 p-5 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-lg">Pembayaran Pesanan</h3>
+                <p className="text-xs text-white/80">Selesaikan sebelum waktu habis</p>
+              </div>
+              {/* Countdown Pill */}
+              <div className="flex items-center gap-1.5 bg-black/30 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-mono font-bold text-amber-300 border border-white/20">
+                <Clock className="size-3.5" />
+                <span>{formatTimer(paymentTimer)}</span>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Payment Method Switcher */}
+              <div className="grid grid-cols-2 gap-2 bg-stone-100 p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('qris')}
+                  className={cn(
+                    'py-2 text-xs font-bold rounded-xl transition-all',
+                    paymentMethod === 'qris'
+                      ? 'bg-white text-stone-900 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  )}
+                >
+                  QRIS Instant
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('va')}
+                  className={cn(
+                    'py-2 text-xs font-bold rounded-xl transition-all',
+                    paymentMethod === 'va'
+                      ? 'bg-white text-stone-900 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  )}
+                >
+                  Virtual Account
+                </button>
+              </div>
+
+              {/* QRIS View */}
+              {paymentMethod === 'qris' ? (
+                <div className="rounded-2xl border border-stone-200 p-4 text-center space-y-3 bg-stone-50">
+                  <div className="mx-auto size-44 bg-white p-2 rounded-2xl shadow-sm border border-stone-200 flex items-center justify-center">
+                    <img
+                      src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=DOVA-KITCHEN-ORDER-PAYMENT-SIMULATION"
+                      alt="QRIS Code"
+                      className="size-full rounded-lg"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="font-bold text-xs text-stone-800">Scan QRIS via GoPay / OVO / BCA / ShopeePay</div>
+                    <div className="font-black text-rose-600 text-lg">
+                      Rp {cartGrandTotal.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-stone-200 p-4 space-y-3 bg-stone-50">
+                  <div className="space-y-1">
+                    <span className="text-xs text-stone-500">Nomor Virtual Account BCA:</span>
+                    <div className="font-mono font-black text-lg text-stone-900 tracking-wider bg-white p-2.5 rounded-xl border border-stone-200 flex justify-between items-center">
+                      <span>8801 2345 6789 001</span>
+                      <span className="text-xs text-rose-600 font-sans font-bold cursor-pointer">Salin</span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-stone-600 space-y-1 pt-1">
+                    <div className="flex justify-between">
+                      <span>Atas Nama:</span>
+                      <span className="font-bold">Dova Kitchen Presisi</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Total Tagihan:</span>
+                      <span className="font-bold text-rose-600">
+                        Rp {cartGrandTotal.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2 pt-2">
+                <Button
+                  onClick={handleSimulatePaymentSuccess}
+                  disabled={paymentDone}
+                  className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 shadow-lg shadow-emerald-600/30 text-sm"
+                >
+                  {paymentDone ? 'Memproses Pesanan...' : 'Simulasi Pembayaran Berhasil ✅'}
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  onClick={() => setIsPaymentOpen(false)}
+                  className="rounded-full text-stone-500 h-9 text-xs"
+                >
+                  Tutup / Bayar Nanti
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── 9. Side Navigation Drawer ───────────────────────────────────────── */}
+      {isSideMenuOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-stone-950/50 backdrop-blur-2xs transition-opacity"
+            onClick={() => setIsSideMenuOpen(false)}
+          />
+
+          <div className="fixed inset-y-0 left-0 max-w-full flex pr-10">
+            <div className="w-screen max-w-xs bg-white shadow-2xl flex flex-col justify-between p-6 rounded-r-3xl animate-in slide-in-from-left duration-300">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-stone-200">
+                  <div className="flex items-center gap-2 font-black text-rose-600 text-lg">
+                    DOVA KITCHEN
+                  </div>
+                  <button
+                    onClick={() => setIsSideMenuOpen(false)}
+                    className="size-8 rounded-full bg-stone-100 flex items-center justify-center text-stone-500"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <Link
+                    to="/orders"
+                    onClick={() => setIsSideMenuOpen(false)}
+                    className="flex items-center gap-3 p-3 rounded-2xl text-stone-700 hover:bg-stone-50 font-semibold text-sm"
+                  >
+                    <ShoppingBag className="size-4" />
+                    <span>Pesanan Saya</span>
+                  </Link>
+                  <Link
+                    to="/passport"
+                    onClick={() => setIsSideMenuOpen(false)}
+                    className="flex items-center gap-3 p-3 rounded-2xl text-stone-700 hover:bg-stone-50 font-semibold text-sm"
+                  >
+                    <ShieldCheck className="size-4" />
+                    <span>Dietary Passport</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSideMenuOpen(false)
+                      const btn = document.querySelector('[aria-label="Tanya Chef BOB"]') as HTMLButtonElement
+                      if (btn) btn.click()
+                      else navigate('/ai')
+                    }}
+                    className="w-full flex items-center gap-3 p-3 rounded-2xl text-stone-700 hover:bg-stone-50 font-semibold text-sm text-left"
+                  >
+                    <Sparkles className="size-4 text-amber-500" />
+                    <span>Asisten AI Chef (BOB)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-stone-200 space-y-3">
+                {isAuthenticated ? (
+                  <>
+                    <div className="text-xs">
+                      <div className="font-bold text-stone-900">{customer?.display_name}</div>
+                      <div className="text-stone-500">@{customer?.username}</div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={logout}
+                      className="w-full rounded-full border-stone-300 text-stone-700 text-xs"
+                    >
+                      Keluar
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    onClick={() => navigate('/login')}
+                    className="w-full rounded-full bg-rose-600 text-white text-xs font-bold"
+                  >
+                    Masuk Akun
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 10. Sticky Bottom Navigation Bar (Matching KFC mobile screenshot) ── */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-6 py-2.5">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <Link
+            to="/order"
+            className="flex flex-col items-center gap-1 text-rose-600 font-bold text-[11px]"
+          >
+            <div className="size-7 rounded-full bg-rose-50 flex items-center justify-center">
+              <Utensils className="size-4" />
+            </div>
+            <span>Home</span>
+          </Link>
+
+          <Link
+            to="/orders"
+            className="flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 font-medium text-[11px] relative"
+          >
+            <div className="size-7 flex items-center justify-center">
+              <ShoppingBag className="size-4" />
+            </div>
+            <span>Orders</span>
+            {cartItemCount > 0 && (
+              <span className="absolute top-0 right-2 size-2 rounded-full bg-rose-600"></span>
+            )}
+          </Link>
+
+          {/* Center Floating Cart Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsCartOpen(true)}
+            className="size-12 -mt-5 rounded-full bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-lg shadow-rose-600/30 flex items-center justify-center active:scale-95 transition-all"
+            aria-label="Buka Keranjang"
+          >
+            <div className="relative">
+              <ShoppingBag className="size-5" />
+              {cartItemCount > 0 && (
+                <span className="absolute -top-1.5 -right-2 size-4 rounded-full bg-amber-400 text-stone-950 font-black text-[9px] flex items-center justify-center">
+                  {cartItemCount}
+                </span>
+              )}
+            </div>
+          </button>
+
+          <Link
+            to="/passport"
+            className="flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 font-medium text-[11px]"
+          >
+            <div className="size-7 flex items-center justify-center">
+              <ShieldCheck className="size-4" />
+            </div>
+            <span>Profile</span>
+          </Link>
+        </div>
+      </nav>
+
+      {/* ── 11. Floating Interactive AI Chatbot Widget ──────────────────────── */}
+      <DovaChatbot />
     </div>
   )
-}
-
-/* ── Passport draft helpers ──────────────────────────────────────────────── */
-
-function criticalCodes(passport: Passport): string[] {
-  return [...passport.allergies, ...passport.intolerances, ...passport.medical].map(
-    (item) => item.code,
-  )
-}
-
-/**
- * Merge the chip selection back into the stored passport.
- *
- * Existing critical restrictions keep their original category so a customer who
- * recorded an intolerance does not silently get promoted to an allergy. Chips
- * that were not recorded before land in `allergies` — the most restrictive
- * bucket, so a mis-tap over-blocks rather than under-blocks. Preferences are
- * carried over untouched because they never block a menu.
- */
-function buildPassportPayload(
-  passport: Passport,
-  codes: string[],
-  ingredients: string,
-): PassportIn {
-  const existing: Restriction[] = [
-    ...passport.allergies,
-    ...passport.intolerances,
-    ...passport.medical,
-  ]
-  const kept = existing.filter((item) => codes.includes(item.code))
-  const keptCodes = new Set(kept.map((item) => item.code))
-  const added: RestrictionIn[] = codes
-    .filter((code) => !keptCodes.has(code))
-    .map((code) => ({
-      code,
-      label:
-        passport.allergies.find((item) => item.code === code)?.label ??
-        existing.find((item) => item.code === code)?.label ??
-        code,
-      category: 'allergy',
-    }))
-
-  return {
-    allergies: [...kept.filter((item) => item.category === 'allergy'), ...added],
-    intolerances: kept.filter((item) => item.category === 'intolerance'),
-    medical: kept.filter((item) => item.category === 'medical'),
-    preferences: passport.preferences,
-    avoided_ingredients: ingredients
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean),
-  }
 }

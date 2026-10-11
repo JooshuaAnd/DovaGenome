@@ -1,11 +1,11 @@
-"""Repository customer + Dietary Passport.
+"""Repository customer + Dietary Passport — Postgres.
 
-Relationship dengan data legacy:
-  * `user_profiles` (lama)  → `_id` = str(chat_id). Dipakai Telegram.
-  * `customers`     (baru)  → `_id` = customer_id, punya `telegram_chat_id`.
+Interface identik dengan versi Astra sehingga auth_service dan router tidak berubah.
 
-Bot Telegram dan webotrustomer berinteraksi dengan customer yang sama lewat
-`TelegramLinkService` (`auth_service.link_telegram`).
+Perubahan internal:
+- customers + user_profiles → tabel customers
+- passport nested → tabel dietary_passports (satu baris per customer)
+- customer_id pakai kolom TEXT (bukan _id UUID dari Astra)
 """
 
 from __future__ import annotations
@@ -15,17 +15,18 @@ import uuid
 from typing import Any
 
 from app.core.domain import (
-    AVOIDED_TIME_OPTIONS,
-    COLLECTION_CUSTOMERS,
-    COLLECTION_PROFILES,
+    CATEGORY_LABELS,
+    RESTRICTION_CATEGORIES,
+    TABLE_CUSTOMERS,
+    TABLE_DIETARY_PASSPORTS,
     normalize_allergen_code,
     normalize_avoided_code,
     split_codes,
 )
-from app.core.errors import ConflictError, DatabaseError, NotFoundError
+from app.core.errors import DatabaseError, NotFoundError
 from app.core.logging import get_logger
-from app.models.enums import RestrictionCategory, Role
-from app.repositories.astra import get_collection
+from app.models.enums import RestrictionCategory
+from app.repositories import supabase as db
 from app.schemas.customer import (
     CustomerOut,
     EmergencyContact,
@@ -33,65 +34,97 @@ from app.schemas.customer import (
     PassportOut,
     RestrictionOut,
 )
-from app.utils.time import now_iso
+from app.utils.time import now_iso, now_wib
 
 log = get_logger("dova.repo.customer")
 
 PHONE_RE = re.compile(r"^\+?[0-9][0-9\s-]{6,19}$")
 
 
-# ── ID ──────────────────────────────────────────────────────────────────────
+# ── Helper ──────────────────────────────────────────────────────────────────
 def new_customer_id() -> str:
-    return f"cus_{uuid.uuid4().hex[:12]}"
+    return "cust_" + uuid.uuid4().hex[:24]
 
 
-def _doc_to_customer(doc: dict[str, Any]) -> CustomerOut:
+def normalize_phone(raw: str) -> str:
+    """Normalisasi nomor telepon agar lookup & keunikan konsisten.
+
+    `0812...` → `+62812...`, `62812...` → `+62812...`, nomor lain dipakai apa
+    adanya (digit saja, opsional awalan `+`).
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    plus = raw.startswith("+")
+    digits = re.sub(r"\D", "", raw)
+    if not digits:
+        return ""
+    if digits.startswith("62"):
+        return "+" + digits
+    if digits.startswith("0"):
+        return "+62" + digits[1:]
+    return ("+" + digits) if plus else digits
+
+
+def username_from_phone(phone: str) -> str:
+    """Username internal deterministik dari nomor telepon (pengenal unik)."""
+    digits = re.sub(r"\D", "", phone or "") or uuid.uuid4().hex[:8]
+    return ("cust" + digits)[:32]
+
+
+def find_by_phone(phone: str) -> dict[str, Any] | None:
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return None
+    try:
+        return db.execute_one(
+            f"SELECT * FROM {TABLE_CUSTOMERS} WHERE phone = %s",  # noqa: S608
+            (normalized,),
+        )
+    except Exception as exc:
+        log.error("find_by_phone gagal: %s", exc)
+        raise DatabaseError("Gagal membaca data pelanggan.") from exc
+
+
+def _row_to_customer(row: dict[str, Any]) -> CustomerOut:
     return CustomerOut(
-        customer_id=str(doc.get("customer_id") or doc.get("_id") or ""),
-        username=str(doc.get("username") or ""),
-        display_name=str(doc.get("display_name") or doc.get("nama") or ""),
-        phone=str(doc.get("phone") or ""),
-        role=str(doc.get("role") or Role.CUSTOMER.value),
-        status=str(doc.get("status") or "active"),
-        telegram_chat_id=doc.get("telegram_chat_id"),
-        telegram_verified=bool(doc.get("telegram_verified")),
-        telegram_link_code=str(doc.get("telegram_link_code") or ""),
-        created_at=str(doc.get("created_at") or ""),
-        updated_at=str(doc.get("updated_at") or ""),
+        customer_id=str(row.get("customer_id") or ""),
+        username=str(row.get("username") or ""),
+        display_name=str(row.get("display_name") or ""),
+        phone=str(row.get("phone") or ""),
+        role=str(row.get("role") or "customer"),
+        status=str(row.get("status") or "active"),
+        telegram_chat_id=row.get("telegram_chat_id"),
+        telegram_verified=bool(row.get("telegram_verified", False)),
+        telegram_link_code=str(row.get("telegram_link_code") or ""),
+        created_at=str(row.get("created_at") or ""),
+        updated_at=str(row.get("updated_at") or ""),
     )
 
 
-# ── CRUD customer ───────────────────────────────────────────────────────────
+# ── Pembacaan ───────────────────────────────────────────────────────────────
 def find_by_username(username: str) -> dict[str, Any] | None:
     try:
-        return get_collection(COLLECTION_CUSTOMERS).find_one(
-            {"username": username.strip().lower()}
+        return db.execute_one(
+            f"SELECT * FROM {TABLE_CUSTOMERS} WHERE username = %s",  # noqa: S608
+            (username.strip().lower(),),
         )
     except Exception as exc:
-        log.error("Cari username %s gagal: %s", username, type(exc).__name__)
-        raise DatabaseError("Gagal mencari pelanggan.") from exc
+        log.error("find_by_username gagal: %s", exc)
+        raise DatabaseError("Gagal membaca data pelanggan.") from exc
 
 
 def get_by_id(customer_id: str) -> dict[str, Any]:
-    """
-    Cari customer berdasarkan id.
-
-    Astra Data API tidak mendukung `$or` pada field `_id`, jadi tidak boleh
-    pakai `{"$or": [{"_id": …}, {"customer_id": …}]}`. Karena `_id` selalu
-    diisi dengan `customer_id`, pencarian `_id` langsung sudah cukup; fallback
-    ke `customer_id` hanya untuk dokumen lama yang belum konsisten.
-    """
     try:
-        collection = get_collection(COLLECTION_CUSTOMERS)
-        doc = collection.find_one({"_id": customer_id})
-        if not doc:
-            doc = collection.find_one({"customer_id": customer_id})
+        row = db.execute_one(
+            f"SELECT * FROM {TABLE_CUSTOMERS} WHERE customer_id = %s",  # noqa: S608
+            (customer_id,),
+        )
     except Exception as exc:
-        log.error("Cari customer %s gagal: %s", customer_id, type(exc).__name__)
-        raise DatabaseError("Gagal mencari pelanggan.") from exc
-    if not doc:
-        raise NotFoundError("Pelanggan tidak ditemukan.")
-    return doc
+        raise DatabaseError("Gagal membaca data pelanggan.") from exc
+    if not row:
+        raise NotFoundError(f"Pelanggan '{customer_id}' tidak ditemukan.")
+    return row
 
 
 def get_public(customer_id: str) -> CustomerOut:
@@ -99,232 +132,269 @@ def get_public(customer_id: str) -> CustomerOut:
 
 
 def to_public(doc: dict[str, Any]) -> CustomerOut:
-    """Konversi dokumen Astra → DTO publik (dipakai service & router)."""
-    return _doc_to_customer(doc)
+    return _row_to_customer(doc)
 
 
 def find_by_link_code(code: str) -> dict[str, Any] | None:
-    """Cari customer berdasarkan code linking Telegram (single-use, ada TTL)."""
-    code = code.strip().upper()
     if not code:
         return None
     try:
-        return get_collection(COLLECTION_CUSTOMERS).find_one({"telegram_link_code": code})
+        return db.execute_one(
+            f"SELECT * FROM {TABLE_CUSTOMERS} WHERE telegram_link_code = %s",  # noqa: S608
+            (code.strip().upper(),),
+        )
     except Exception as exc:
-        log.error("Cari link code gagal: %s", type(exc).__name__)
-        raise DatabaseError("Gagal memverifikasi kode linking.") from exc
+        raise DatabaseError("Gagal mencari kode linking.") from exc
 
 
 def find_by_telegram_chat_id(chat_id: int) -> dict[str, Any] | None:
     try:
-        return get_collection(COLLECTION_CUSTOMERS).find_one(
-            {"telegram_chat_id": int(chat_id)}
+        return db.execute_one(
+            f"SELECT * FROM {TABLE_CUSTOMERS} WHERE telegram_chat_id = %s",  # noqa: S608
+            (int(chat_id),),
         )
     except Exception as exc:
-        log.error("Cari customer via chat_id %s gagal: %s", chat_id, type(exc).__name__)
-        raise DatabaseError("Gagal mencari pelanggan via Telegram.") from exc
+        raise DatabaseError("Gagal mencari pelanggan by chat_id.") from exc
 
 
+# ── Penulisan ───────────────────────────────────────────────────────────────
 def create_customer(
     *,
     username: str,
     display_name: str = "",
     phone: str = "",
-    role: str = Role.CUSTOMER.value,
-    password_hash: str = "",
-    status: str = "active",
+    role: str = "customer",
+    password_hash: str | None = None,
 ) -> dict[str, Any]:
     username = username.strip().lower()
-    if find_by_username(username):
+    existing = find_by_username(username)
+    if existing:
+        from app.core.errors import ConflictError
         raise ConflictError(f"Username '{username}' sudah dipakai.")
 
-    if phone and not PHONE_RE.match(phone):
-        raise ConflictError("Nomor telepon tidak valid.")
-    if phone:
-        existing = get_collection(COLLECTION_CUSTOMERS).find_one({"phone": phone})
-        if existing:
-            raise ConflictError("Nomor telepon sudah terdaftar.")
+    phone = normalize_phone(phone)
+    if phone and role == "customer":
+        from app.core.errors import ConflictError
+        if find_by_phone(phone):
+            raise ConflictError(
+                "Nomor telepon ini sudah terdaftar. Silakan masuk dengan nomor tersebut."
+            )
 
     customer_id = new_customer_id()
-    now = now_iso()
-    doc = {
-        "_id": customer_id,
-        "customer_id": customer_id,
-        "username": username,
-        "display_name": display_name.strip() or username,
-        "phone": phone.strip(),
-        "role": role,
-        "status": status,
-        "password_hash": password_hash,
-        "telegram_chat_id": None,
-        "telegram_verified": False,
-        "telegram_username": "",
-        "passport": _empty_passport(),
-        "created_at": now,
-        "updated_at": now,
-    }
     try:
-        get_collection(COLLECTION_CUSTOMERS).insert_one(doc)
-    except Exception as exc:
-        log.error("Buat customer %s gagal: %s: %s", username, type(exc).__name__, exc)
-        raise DatabaseError("Gagal membuat akun pelanggan.") from exc
-
-    log.info("customer_created id=%s username=%s role=%s", customer_id, username, role)
-    return doc
-
-
-def update_fields(customer_id: str, fields: dict[str, Any]) -> dict[str, Any]:
-    payload = {**fields, "updated_at": now_iso()}
-    try:
-        result = get_collection(COLLECTION_CUSTOMERS).update_one(
-            {"_id": customer_id}, {"$set": payload}
+        db.execute_write(
+            f"""
+            INSERT INTO {TABLE_CUSTOMERS}
+                (customer_id, username, display_name, phone, role, password_hash)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,  # noqa: S608
+            (customer_id, username, display_name or username, phone or "", role, password_hash),
         )
     except Exception as exc:
-        log.error("Update customer %s gagal: %s", customer_id, type(exc).__name__)
-        raise DatabaseError("Gagal menyimpan perubahan pelanggan.") from exc
-    if not _was_modified(result):
-        # `_id` tidak cocok — coba lewat `customer_id` (dokumen lama).
-        try:
-            result = get_collection(COLLECTION_CUSTOMERS).update_one(
-                {"customer_id": customer_id}, {"$set": payload}
-            )
-        except Exception as exc:
-            log.error("Update customer %s (fallback) gagal: %s", customer_id, type(exc).__name__)
-            raise DatabaseError("Gagal menyimpan perubahan pelanggan.") from exc
+        raise DatabaseError("Gagal membuat akun pelanggan.") from exc
     return get_by_id(customer_id)
 
 
-def _was_modified(result: Any) -> bool:
-    """Astra sering melaporkan n=0 walau dokumen ada; andalkan `nModified`."""
-    info = getattr(result, "update_info", None) or {}
+def update_fields(customer_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    if not fields:
+        return get_by_id(customer_id)
+
+    safe = {k: v for k, v in fields.items() if re.match(r"^[a-z_]+$", k)}
+    if not safe:
+        return get_by_id(customer_id)
+
+    safe["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = %s" for k in safe)
+    values = tuple(safe.values()) + (customer_id,)
     try:
-        return int(info.get("n", 0)) > 0
-    except (TypeError, ValueError):
-        return bool(result)
+        db.execute_write(
+            f"UPDATE {TABLE_CUSTOMERS} SET {set_clause} WHERE customer_id = %s",  # noqa: S608
+            values,
+        )
+    except Exception as exc:
+        raise DatabaseError("Gagal memperbarui data pelanggan.") from exc
+    return get_by_id(customer_id)
 
 
 def set_telegram_link_code(customer_id: str, code: str, expires_at: str) -> None:
     update_fields(
-        customer_id, {"telegram_link_code": code, "telegram_link_code_expires_at": expires_at}
+        customer_id,
+        {
+            "telegram_link_code": code.upper(),
+            "telegram_link_code_expires_at": expires_at,
+        },
     )
 
 
 def clear_telegram_link_code(customer_id: str) -> None:
-    update_fields(customer_id, {"telegram_link_code": "", "telegram_link_code_expires_at": ""})
+    update_fields(
+        customer_id,
+        {"telegram_link_code": None, "telegram_link_code_expires_at": None},
+    )
 
 
-def link_telegram(
-    customer_id: str, chat_id: int, telegram_username: str = ""
-) -> dict[str, Any]:
-    """Ikat chat_id Telegram ke customer. Sekaligus menulis `customer_id` ke `user_profiles`."""
-    doc = update_fields(
+def link_telegram(customer_id: str, chat_id: int, telegram_username: str = "") -> None:
+    update_fields(
         customer_id,
         {
             "telegram_chat_id": int(chat_id),
             "telegram_verified": True,
+            "telegram_username": telegram_username or "",
             "telegram_linked_at": now_iso(),
-            "telegram_username": telegram_username.strip().lstrip("@"),
-            "telegram_link_code": "",
-            "telegram_link_code_expires_at": "",
+            "telegram_link_code": None,
+            "telegram_link_code_expires_at": None,
         },
     )
-    sync_legacy_profile(
-        chat_id=chat_id,
-        customer_id=customer_id,
-        nama=doc.get("display_name") or doc.get("username", ""),
-    )
-    log.info("telegram_linked customer=%s chat_id=%s", customer_id, chat_id)
-    return doc
+    # Sync ke dietary_passports bila sudah ada
+    _ensure_passport_row(customer_id)
+
+
+def _ensure_passport_row(customer_id: str) -> None:
+    """Buat baris dietary_passports bila belum ada."""
+    try:
+        db.execute_write(
+            f"""
+            INSERT INTO {TABLE_DIETARY_PASSPORTS} (customer_id)
+            VALUES (%s)
+            ON CONFLICT (customer_id) DO NOTHING
+            """,  # noqa: S608
+            (customer_id,),
+        )
+    except Exception:
+        pass
 
 
 def list_customers(*, limit: int = 500) -> list[dict[str, Any]]:
     try:
-        return list(
-            get_collection(COLLECTION_CUSTOMERS).find(
-                {}, sort={"created_at": -1}, limit=limit
-            )
+        return db.execute(
+            f"SELECT * FROM {TABLE_CUSTOMERS} ORDER BY created_at ASC LIMIT %s",  # noqa: S608
+            (limit,),
         )
     except Exception as exc:
-        log.error("Daftar customer gagal: %s", type(exc).__name__)
         raise DatabaseError("Gagal membaca daftar pelanggan.") from exc
 
 
 def count_customers(*, verified_only: bool = False) -> int:
-    query = {"telegram_verified": True} if verified_only else {}
     try:
-        return int(
-            get_collection(COLLECTION_CUSTOMERS).count_documents(query, upper_bound=10_000)
-        )
-    except Exception:
-        try:
-            return len(list(get_collection(COLLECTION_CUSTOMERS).find(query, limit=10_000)))
-        except Exception as exc:
-            log.warning("Hitung customer gagal: %s", type(exc).__name__)
-            return 0
-
-
-# ── Sinkronisasi ke `user_profiles` (legacy Telegram) ───────────────────────
-def sync_legacy_profile(*, chat_id: int, customer_id: str, nama: str) -> None:
-    """
-    Tulis `customer_id` ke `user_profiles` agar order lama & bot tetap terhubung.
-
-    Kegagalan tidak fatal — web tetap berfungsi, hanya history Telegram yang
-    belum tersambung.
-    """
-    try:
-        get_collection(COLLECTION_PROFILES).update_one(
-            {"_id": str(chat_id)},
-            {"$set": {"customer_id": customer_id, "nama": nama, "updated_at": now_iso()}},
-            upsert=True,
-        )
+        if verified_only:
+            row = db.execute_one(
+                f"SELECT COUNT(*) AS n FROM {TABLE_CUSTOMERS} WHERE telegram_verified = TRUE",  # noqa: S608
+            )
+        else:
+            row = db.execute_one(f"SELECT COUNT(*) AS n FROM {TABLE_CUSTOMERS}")  # noqa: S608
+        return int(row["n"]) if row else 0
     except Exception as exc:
-        log.warning(
-            "Sinkron user_profiles/%s gagal: %s: %s", chat_id, type(exc).__name__, exc
-        )
+        log.warning("count_customers gagal: %s", exc)
+        return 0
+
+
+# ── Legacy profile sync (kompatibilitas bot Telegram lama) ──────────────────
+def sync_legacy_profile(*, chat_id: int, customer_id: str, nama: str) -> None:
+    """Perbarui display_name dan chat_id di tabel customers."""
+    update_fields(
+        customer_id,
+        {"telegram_chat_id": int(chat_id), "display_name": nama or ""},
+    )
 
 
 def get_legacy_profile(chat_id: int) -> dict[str, Any]:
-    try:
-        doc = get_collection(COLLECTION_PROFILES).find_one({"_id": str(chat_id)}) or {}
-    except Exception as exc:
-        log.error("Baca user_profiles/%s gagal: %s", chat_id, type(exc).__name__)
-        raise DatabaseError("Gagal membaca profil Telegram.") from exc
-    doc.pop("_id", None)
-    return doc
+    """Baca profil lama berformat {nama, alergen, avoided_times}."""
+    row = find_by_telegram_chat_id(chat_id)
+    if not row:
+        return {}
+    passport_row = db.execute_one(
+        f"SELECT * FROM {TABLE_DIETARY_PASSPORTS} WHERE customer_id = %s",  # noqa: S608
+        (row["customer_id"],),
+    )
+    return _legacy_format(row, passport_row)
+
+
+def _legacy_format(row: dict[str, Any], passport_row: dict[str, Any] | None) -> dict[str, Any]:
+    """Kembalikan format lama yang dipakai bot Telegram."""
+    allergies: list[str] = []
+    if passport_row:
+        import json as _json
+        raw = passport_row.get("allergies") or []
+        if isinstance(raw, str):
+            try:
+                raw = _json.loads(raw)
+            except Exception:
+                raw = []
+        for r in raw:
+            if isinstance(r, dict) and r.get("code"):
+                allergies.append(normalize_allergen_code(r["code"]))
+
+    avoided_raw = (passport_row or {}).get("avoided_times") or []
+    if isinstance(avoided_raw, str):
+        avoided_raw = split_codes(avoided_raw)
+
+    return {
+        "customer_id": str(row.get("customer_id") or ""),
+        "chat_id": row.get("telegram_chat_id"),
+        "nama": str(row.get("display_name") or ""),
+        "alergen": allergies,
+        "avoided_times": avoided_raw,
+        "dietary_profile": ", ".join(allergies) if allergies else "Tidak ada",
+    }
 
 
 def update_legacy_profile(chat_id: int, fields: dict[str, Any]) -> None:
-    """Simpan preferensi non-struktur ke profil Telegram (avoided_times, dll)."""
-    try:
-        get_collection(COLLECTION_PROFILES).update_one(
-            {"_id": str(chat_id)},
-            {"$set": {**fields, "updated_at": now_iso()}},
-            upsert=True,
+    """Perbarui profil lama (kompatibilitas bot)."""
+    row = find_by_telegram_chat_id(chat_id)
+    if not row:
+        return
+    customer_id = str(row["customer_id"])
+    customer_fields: dict[str, Any] = {}
+    if "nama" in fields:
+        customer_fields["display_name"] = fields["nama"]
+    if customer_fields:
+        update_fields(customer_id, customer_fields)
+
+    # Alergen dan avoided_times disimpan ke passport
+    passport_fields: dict[str, Any] = {}
+    if "alergen" in fields:
+        import json as _json
+        codes = fields["alergen"] if isinstance(fields["alergen"], list) else split_codes(fields["alergen"])
+        passport_fields["allergies"] = _json.dumps(
+            [{"code": normalize_allergen_code(c), "label": c, "category": "allergy", "severity": "", "notes": ""} for c in codes if c]
         )
-    except Exception as exc:
-        log.warning("Update user_profiles/%s gagal: %s", chat_id, type(exc).__name__)
-        raise DatabaseError("Gagal menyimpan profil Telegram.") from exc
+    if "avoided_times" in fields:
+        raw = fields["avoided_times"]
+        if isinstance(raw, list):
+            avoided = raw
+        else:
+            avoided = split_codes(raw)
+        passport_fields["avoided_times"] = avoided
+
+    if passport_fields:
+        _ensure_passport_row(customer_id)
+        safe = {k: v for k, v in passport_fields.items() if re.match(r"^[a-z_]+$", k)}
+        if safe:
+            set_clause = ", ".join(f"{k} = %s" for k in safe)
+            vals = tuple(safe.values()) + (customer_id,)
+            db.execute_write(
+                f"UPDATE {TABLE_DIETARY_PASSPORTS} SET {set_clause} WHERE customer_id = %s",  # noqa: S608
+                vals,
+            )
 
 
 def resolve_customer_id_by_chat_id(chat_id: int) -> str | None:
-    """Petakan chat_id → customer_id (dari `customers`, lalu `user_profiles`)."""
-    doc = find_by_telegram_chat_id(chat_id)
-    if doc:
-        return str(doc.get("customer_id") or doc.get("_id"))
-    legacy = get_legacy_profile(chat_id)
-    return str(legacy.get("customer_id")) if legacy.get("customer_id") else None
+    row = find_by_telegram_chat_id(chat_id)
+    return str(row["customer_id"]) if row else None
 
 
 def normalize_legacy_avoided_times(raw: Any) -> list[str]:
+    from app.core.domain import AVOIDED_TIME_OPTIONS
+    items = raw if isinstance(raw, list) else split_codes(raw)
     out: list[str] = []
-    for item in split_codes(raw):
-        code = normalize_avoided_code(item)
+    for item in items:
+        code = normalize_avoided_code(str(item or ""))
         if code in AVOIDED_TIME_OPTIONS and code not in out:
             out.append(code)
     return out
 
 
-# ── Dietary Passport ────────────────────────────────────────────────────────
+# ── Dietary Passport ─────────────────────────────────────────────────────────
 def _empty_passport() -> dict[str, Any]:
     return {
         "allergies": [],
@@ -336,7 +406,9 @@ def _empty_passport() -> dict[str, Any]:
         "medical_notes": "",
         "safety_notes": "",
         "emergency_notes": "",
-        "emergency_contact": {"name": "", "phone": "", "relationship": ""},
+        "emergency_contact": {},
+        "legacy_dietary_profile": "",
+        "structured": False,
         "updated_at": "",
     }
 
@@ -344,185 +416,160 @@ def _empty_passport() -> dict[str, Any]:
 def _restriction(raw: Any, category: RestrictionCategory) -> RestrictionOut:
     if isinstance(raw, dict):
         return RestrictionOut(
-            code=normalize_allergen_code(raw.get("code") or ""),
-            label=str(raw.get("label") or raw.get("code") or "—"),
+            code=normalize_allergen_code(str(raw.get("code") or "")),
+            label=str(raw.get("label") or ""),
             category=category,
             severity=str(raw.get("severity") or ""),
             notes=str(raw.get("notes") or ""),
         )
     return RestrictionOut(
-        code=normalize_allergen_code(raw),
-        label=str(raw),
+        code=normalize_allergen_code(str(raw or "")),
+        label=str(raw or ""),
         category=category,
     )
 
 
 def get_passport(customer_id: str) -> PassportOut:
-    """
-    Baca Dietary Passport terstruktur.
+    import json as _json
 
-    Bila passport belum pernah diisi, bangun tampilan dari `user_profiles` —
-    3 profil lama hanya punya `dietary_profile` berupa string koma.
-    """
-    doc = get_by_id(customer_id)
-    raw = doc.get("passport") or {}
-    legacy = _passport_from_legacy_profile(doc)
+    # Pastikan customer ada
+    get_by_id(customer_id)
+
+    row = db.execute_one(
+        f"SELECT * FROM {TABLE_DIETARY_PASSPORTS} WHERE customer_id = %s",  # noqa: S608
+        (customer_id,),
+    )
+    if not row:
+        return PassportOut()
+
+    def _parse_jsonb(val: Any) -> list:
+        if not val:
+            return []
+        if isinstance(val, list):
+            return val
+        try:
+            return _json.loads(val)
+        except Exception:
+            return []
 
     def group(key: str, category: RestrictionCategory) -> list[RestrictionOut]:
-        items = raw.get(key)
-        if isinstance(items, list) and items:
-            return [_restriction(i, category) for i in items]
-        return legacy.get(key, [])
+        items = _parse_jsonb(row.get(key))
+        return [_restriction(r, category) for r in items if r]
 
-    allergies = group("allergies", RestrictionCategory.ALLERGY)
+    allergies    = group("allergies",    RestrictionCategory.ALLERGY)
     intolerances = group("intolerances", RestrictionCategory.INTOLERANCE)
-    medical = group("medical", RestrictionCategory.MEDICAL)
-    preferences = group("preferences", RestrictionCategory.PREFERENCE)
+    medical      = group("medical",      RestrictionCategory.MEDICAL)
+    preferences  = group("preferences",  RestrictionCategory.PREFERENCE)
 
-    avoided_times = normalize_legacy_avoided_times(
-        raw.get("avoided_times") or doc.get("avoided_times") or legacy.get("avoided_times")
-    )
+    avoided_ingredients = row.get("avoided_ingredients") or []
+    if isinstance(avoided_ingredients, str):
+        avoided_ingredients = split_codes(avoided_ingredients)
+
+    avoided_times = row.get("avoided_times") or []
+    if isinstance(avoided_times, str):
+        avoided_times = split_codes(avoided_times)
+
+    from app.core.domain import SAFETY_CRITICAL_CATEGORIES
+    critical_codes = list({
+        r.code
+        for r in (allergies + intolerances + medical)
+        if r.category.value in SAFETY_CRITICAL_CATEGORIES and r.code
+    })
+
+    ec_raw = row.get("emergency_contact") or {}
+    if isinstance(ec_raw, str):
+        try:
+            ec_raw = _json.loads(ec_raw)
+        except Exception:
+            ec_raw = {}
 
     return PassportOut(
         allergies=allergies,
         intolerances=intolerances,
         medical=medical,
         preferences=preferences,
-        avoided_ingredients=[str(a) for a in (raw.get("avoided_ingredients") or []) if a],
-        avoided_times=avoided_times,
-        medical_notes=str(raw.get("medical_notes") or ""),
-        safety_notes=str(raw.get("safety_notes") or ""),
-        emergency_notes=str(raw.get("emergency_notes") or ""),
-        emergency_contact=EmergencyContact(
-            **(raw.get("emergency_contact") or {})  # type: ignore[arg-type]
-        ),
-        critical_codes=sorted(
-            {r.code for r in (*allergies, *intolerances, *medical) if r.code}
-        ),
-        legacy_dietary_profile=str(
-            (raw.get("legacy_dietary_profile") or doc.get("legacy_dietary_profile") or "")
-        ),
-        structured=bool(
-            allergies or intolerances or medical or preferences
-            or raw.get("avoided_ingredients")
-        ),
-        updated_at=str(raw.get("updated_at") or doc.get("updated_at") or ""),
+        avoided_ingredients=list(avoided_ingredients),
+        avoided_times=list(avoided_times),
+        medical_notes=str(row.get("medical_notes") or ""),
+        safety_notes=str(row.get("safety_notes") or ""),
+        emergency_notes=str(row.get("emergency_notes") or ""),
+        emergency_contact=EmergencyContact(**ec_raw) if isinstance(ec_raw, dict) else EmergencyContact(),
+        critical_codes=critical_codes,
+        legacy_dietary_profile=str(row.get("legacy_dietary_profile") or ""),
+        structured=bool(row.get("structured", False)),
+        updated_at=str(row.get("updated_at") or ""),
     )
-
-
-def _passport_from_legacy_profile(doc: dict[str, Any]) -> dict[str, Any]:
-    """
-    Bentuk passport sementara dari `dietary_profile` legacy.
-
-    Data lama (`user_profiles`) hanya menyimpan satu string bebas
-    `dietary_profile` — tidak membedakan alergi, intoleransi, atau preferensi.
-    Semuanya diklasifikasikan sebagai `allergy` (kategori kritis, lihat
-    `SAFETY_CRITICAL_CATEGORIES`) agar tidak ada alergi nyata yang lolos ke
-    dapur hanya karena salah klasifikasi. Konsekuensinya sistem lebih sering
-    memberi peringatan — itu memang pilihan yang benar untuk produksi makanan.
-    Dapur tetap bisa mengoreksi klasifikasi lewat kolom notes.
-    """
-    fallback = _empty_passport()
-    chat_id = doc.get("telegram_chat_id")
-    legacy_dietary = str(doc.get("legacy_dietary_profile") or "")
-    legacy_avoided: list[str] = []
-
-    if chat_id:
-        try:
-            profile = get_legacy_profile(int(chat_id))
-            legacy_dietary = legacy_dietary or str(profile.get("dietary_profile") or "")
-            legacy_avoided = normalize_legacy_avoided_times(profile.get("avoided_times"))
-        except DatabaseError:
-            pass
-
-    labels = _legacy_labels()
-    items: list[RestrictionOut] = []
-    for part in split_codes(legacy_dietary):
-        if part.lower() in ("tidak ada", "-", ""):
-            continue
-        code = normalize_allergen_code(part)
-        items.append(
-            RestrictionOut(
-                code=code,
-                label=labels.get(code, part),
-                category=RestrictionCategory.ALLERGY,
-                notes="Diimpor dari dietary_profile lama (klasifikasi perlu dikonfirmasi)",
-            )
-        )
-
-    fallback["intolerances"] = items
-    fallback["avoided_times"] = legacy_avoided
-    return fallback
-
-
-def _legacy_labels() -> dict[str, str]:
-    from app.repositories.catalog_repo import list_allergens
-
-    try:
-        return {a.code: a.label for a in list_allergens(include_inactive=True)}
-    except DatabaseError:
-        return {}
 
 
 def save_passport(customer_id: str, payload: PassportIn) -> PassportOut:
-    """
-    Simpan passport. Partial update: hanya bagian yang diisi yang ditulis.
+    import json as _json
 
-    `payload` adalah model `PassportIn`; field yang `None` berarti "tidak
-    diubah", bukan "dikosongkan".
-    """
-    doc = get_by_id(customer_id)
-    current = {**_empty_passport(), **(doc.get("passport") or {})}
+    get_by_id(customer_id)  # pastikan ada
+    _ensure_passport_row(customer_id)
 
-    for key in ("allergies", "intolerances", "medical", "preferences"):
-        group = getattr(payload, key, None)
-        if group is not None:
-            current[key] = [r.model_dump(mode="json") for r in group]
-
-    for key in (
-        "avoided_ingredients",
-        "medical_notes",
-        "safety_notes",
-        "emergency_notes",
-        "avoided_times",
-    ):
-        value = getattr(payload, key, None)
-        if value is not None:
-            current[key] = value
-
-    if payload.emergency_contact is not None:
-        current["emergency_contact"] = payload.emergency_contact.model_dump()
-
-    # Simpan juga representasi legacy agar bot Telegram & order lama konsisten.
-    # WAJIB dihitung dari `current` (hasil merge), bukan dari `payload`: kalau
-    # pelanggan hanya mengirim `avoided_times`, allergen sebelumnya tetap berlaku
-    # dan string legacy tidak boleh ikut hilang.
-    critical_labels = [
-        str(item.get("label") or item.get("code") or "").strip()
-        for group in ("allergies", "intolerances", "medical")
-        for item in (current.get(group) or [])
-    ]
-    current["legacy_dietary_profile"] = (
-        ", ".join(label for label in critical_labels if label) or "Tidak ada"
+    row = db.execute_one(
+        f"SELECT * FROM {TABLE_DIETARY_PASSPORTS} WHERE customer_id = %s",  # noqa: S608
+        (customer_id,),
     )
-    current["updated_at"] = now_iso()
+    existing = row or _empty_passport()
 
-    update_fields(customer_id, {"passport": current})
+    def _ser(items: Any) -> str:
+        if items is None:
+            return _json.dumps([])
+        return _json.dumps(
+            [
+                {
+                    "code": normalize_allergen_code(r.code),
+                    "label": r.label,
+                    "category": r.category.value if hasattr(r.category, "value") else str(r.category),
+                    "severity": r.severity,
+                    "notes": r.notes,
+                }
+                for r in items
+            ]
+        )
 
-    # Cermin ke user_profiles bila customer sudah tertaut Telegram.
-    chat_id = doc.get("telegram_chat_id")
-    if chat_id:
-        mirror = {
-            "dietary_profile": current["legacy_dietary_profile"],
-            "avoided_times": current.get("avoided_times") or [],
-        }
-        if doc.get("display_name"):
-            mirror["nama"] = doc["display_name"]
-        update_legacy_profile(int(chat_id), mirror)
+    def _get_existing_list(key: str) -> str:
+        val = existing.get(key) or []
+        if isinstance(val, str):
+            return val
+        return _json.dumps(val)
 
-    log.info("passport_updated customer=%s", customer_id)
+    fields: dict[str, Any] = {
+        "allergies":    _ser(payload.allergies)    if payload.allergies    is not None else _get_existing_list("allergies"),
+        "intolerances": _ser(payload.intolerances) if payload.intolerances is not None else _get_existing_list("intolerances"),
+        "medical":      _ser(payload.medical)      if payload.medical      is not None else _get_existing_list("medical"),
+        "preferences":  _ser(payload.preferences)  if payload.preferences  is not None else _get_existing_list("preferences"),
+        "avoided_ingredients": payload.avoided_ingredients if payload.avoided_ingredients is not None
+                               else (existing.get("avoided_ingredients") or []),
+        "avoided_times": payload.avoided_times if payload.avoided_times is not None
+                         else (existing.get("avoided_times") or []),
+        "medical_notes":    payload.medical_notes    if payload.medical_notes    is not None else str(existing.get("medical_notes") or ""),
+        "safety_notes":     payload.safety_notes     if payload.safety_notes     is not None else str(existing.get("safety_notes") or ""),
+        "emergency_notes":  payload.emergency_notes  if payload.emergency_notes  is not None else str(existing.get("emergency_notes") or ""),
+        "emergency_contact": _json.dumps(payload.emergency_contact.model_dump()) if payload.emergency_contact is not None
+                             else (_json.dumps(existing.get("emergency_contact") or {}) if isinstance(existing.get("emergency_contact"), dict) else (existing.get("emergency_contact") or "{}")),
+        "structured": True,
+        "updated_at": now_iso(),
+    }
+
+    set_clause = ", ".join(f"{k} = %s" for k in fields)
+    values = tuple(fields.values()) + (customer_id,)
+    try:
+        db.execute_write(
+            f"UPDATE {TABLE_DIETARY_PASSPORTS} SET {set_clause} WHERE customer_id = %s",  # noqa: S608
+            values,
+        )
+    except Exception as exc:
+        raise DatabaseError("Gagal menyimpan Dietary Passport.") from exc
+
     return get_passport(customer_id)
 
 
 def critical_codes_for_customer(customer_id: str) -> list[str]:
-    return get_passport(customer_id).critical_codes
+    """Kode alergen kritis dari passport customer."""
+    try:
+        passport = get_passport(customer_id)
+        return passport.critical_codes
+    except (NotFoundError, DatabaseError):
+        return []

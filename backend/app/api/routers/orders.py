@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import get_current_customer, get_verified_customer
+from app.api.deps import get_current_customer
 from app.core.logging import get_logger
 from app.schemas.customer import CustomerOut
 from app.schemas.order import (
@@ -42,7 +42,7 @@ def my_orders(
     summary="Buat pesanan",
 )
 def create_order(
-    payload: OrderCreateIn, customer: CustomerOut = Depends(get_verified_customer)
+    payload: OrderCreateIn, customer: CustomerOut = Depends(get_current_customer)
 ) -> OrderDetailOut:
     """
     Buat pesanan + tiket dapur.

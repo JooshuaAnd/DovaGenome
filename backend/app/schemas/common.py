@@ -39,7 +39,13 @@ class HealthPayload(ApiModel):
     version: str
     environment: str
     demo_mode: bool
-    astra_connected: bool
-    collections: dict[str, Any] = Field(default_factory=dict)
+    db_connected: bool
+    tables: dict[str, Any] = Field(default_factory=dict)
     credentials: dict[str, bool] = Field(default_factory=dict)
     telegram_bot_username: str = ""
+    # Backward-compat alias — beberapa klien masih membaca field ini
+    astra_connected: bool = False
+
+    def model_post_init(self, __context: Any) -> None:
+        # Sinkronkan alias agar klien lama tetap benar
+        object.__setattr__(self, "astra_connected", self.db_connected)

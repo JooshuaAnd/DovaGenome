@@ -1,5 +1,5 @@
 """
-Buat akun admin/kitchen pertama.
+Buat akun admin/kitchen pertama (Supabase/Postgres).
 
 Endpoint `/api/admin/staff` hanya bisa dipakai admin yang sudah ada, jadi
 akun pertama harus dibuat lewat skrip ini.
@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.errors import AppError  # noqa: E402
 from app.models.enums import Role  # noqa: E402
-from app.repositories import astra, customer_repo  # noqa: E402
+from app.repositories import supabase, customer_repo  # noqa: E402
 from app.services import auth_service  # noqa: E402
 
 
@@ -35,10 +35,13 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if not astra.is_connected():
-        print("Astra DB tidak tersambung. Periksa ASTRA_DB_API_ENDPOINT & token.")
+    if not supabase.is_connected():
+        print("Supabase tidak tersambung. Periksa SUPABASE_DB_API_ENDPOINT & SUPABASE_DB_APPLICATION_TOKEN.")
         return 1
-    astra.ensure_collections()
+
+    if not supabase.check_migrations():
+        print("Migrasi SQL belum dijalankan. Jalankan: psql $DATABASE_URL -f supabase/migrations/001_schema.sql")
+        return 1
 
     password = args.password or getpass.getpass("Password (minimal 8 karakter): ")
     if len(password) < 8:
@@ -53,7 +56,7 @@ def main() -> int:
             print("Batal.")
             return 1
         customer_repo.update_fields(
-            str(existing.get("customer_id") or existing.get("_id")),
+            str(existing.get("customer_id")),
             {
                 "password_hash": auth_service.hash_password(password),
                 "role": args.role,

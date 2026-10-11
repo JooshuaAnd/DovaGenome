@@ -1,7 +1,20 @@
 import { http } from './http'
-import type { Customer, LoginPayload, RegisterPayload, StaffIn, TelegramLinkResult, Token } from './types'
+import type {
+  Customer,
+  CustomerSignInPayload,
+  LoginPayload,
+  RegisterPayload,
+  StaffIn,
+  TelegramLinkResult,
+  Token,
+} from './types'
 
 export const authService = {
+  /** Pelanggan: satu form nama + telepon (login/daftar otomatis). */
+  signInCustomer(payload: CustomerSignInPayload) {
+    return http.post<Token>('/auth/customer', payload, { auth: false })
+  },
+
   register(payload: RegisterPayload) {
     return http.post<Token>('/auth/register', payload, { auth: false })
   },

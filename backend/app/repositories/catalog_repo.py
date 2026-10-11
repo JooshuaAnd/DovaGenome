@@ -1,7 +1,7 @@
-"""Katalog terstruktur: paket, alergen, menu mingguan.
+"""Katalog terstruktur: paket, alergen, menu mingguan — Postgres.
 
-Semua pembacaan sudah dinormalisasi di sini sehingga service dan frontend
-tidak pernah melihat dokumen Astra mentah.
+Interface method identik dengan versi Astra sehingga service dan router
+tidak berubah sama sekali.
 """
 
 from __future__ import annotations
@@ -11,32 +11,26 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.domain import (
-    COLLECTION_ALLERGENS,
-    COLLECTION_MENUS,
-    COLLECTION_PACKAGES,
     DAYS,
+    TABLE_ALLERGENS,
+    TABLE_MENU_INGREDIENTS,
+    TABLE_MENUS,
+    TABLE_PACKAGES,
     normalize_allergen_code,
     split_codes,
 )
 from app.core.errors import DatabaseError, NotFoundError, ValidationError
 from app.core.logging import get_logger
-from app.repositories.astra import get_collection
+from app.repositories import supabase as db
 from app.repositories.cache import TTLCache
 from app.schemas.catalog import AllergenOut, MenuOut, PackageOut
 
 log = get_logger("dova.repo.catalog")
 
-_cache: TTLCache[dict[str, Any]] = TTLCache(settings.catalog_cache_ttl_seconds)
+_cache: TTLCache[Any] = TTLCache(settings.catalog_cache_ttl_seconds)
 
 
 def _cached(key: str, loader: Any) -> Any:
-    """
-    Baca lewat cache TTL.
-
-    Katalog dibaca sangat sering (safety report memanggilnya per hari, KDS per
-    render) sementara isinya berubah sangat jarang. Tanpa cache ini satu
-    permintaan bisa menembak Astra puluhan kali.
-    """
     value = _cache.get(key)
     if value is None:
         value = loader()
@@ -45,21 +39,18 @@ def _cached(key: str, loader: Any) -> Any:
 
 
 # ── Allergen ────────────────────────────────────────────────────────────────
-def _normalize_allergen(doc: dict[str, Any]) -> AllergenOut:
+def _row_to_allergen(row: dict[str, Any]) -> AllergenOut:
     return AllergenOut(
-        code=normalize_allergen_code(doc.get("code") or doc.get("_id")),
-        label=str(doc.get("label") or "—"),
-        risiko=str(doc.get("risiko") or ""),
-        active=bool(doc.get("active", True)),
-        category=str(doc.get("category") or "allergy"),
+        code=normalize_allergen_code(row["code"]),
+        label=str(row.get("label") or "—"),
+        risiko=str(row.get("risiko") or ""),
+        active=bool(row.get("active", True)),
+        category=str(row.get("category") or "allergy"),
     )
 
 
 def list_allergens(*, include_inactive: bool = False, use_cache: bool = True) -> list[AllergenOut]:
     if use_cache:
-        # Disalin: list hasil cache dibaca bersama banyak request, dan satu
-        # service yang menyortir/menghapus elemennya tidak boleh mengubah
-        # salinan milik request lain.
         return list(
             _cached(
                 f"allergens:{include_inactive}",
@@ -67,35 +58,39 @@ def list_allergens(*, include_inactive: bool = False, use_cache: bool = True) ->
             )
         )
     try:
-        cursor = get_collection(COLLECTION_ALLERGENS).find({}, sort={"code": 1}, limit=200)
-        rows = list(cursor)
+        sql = f"SELECT * FROM {TABLE_ALLERGENS} ORDER BY code"  # noqa: S608
+        rows = db.execute(sql)
     except Exception as exc:
-        log.error("Baca %s gagal: %s: %s", COLLECTION_ALLERGENS, type(exc).__name__, exc)
+        log.error("Baca %s gagal: %s: %s", TABLE_ALLERGENS, type(exc).__name__, exc)
         raise DatabaseError("Gagal membaca definisi alergen.") from exc
 
-    out = [_normalize_allergen(d) for d in rows]
+    out = [_row_to_allergen(r) for r in rows]
     if not include_inactive:
         out = [a for a in out if a.active]
     return sorted(out, key=lambda a: a.code)
 
 
 # ── Packages ────────────────────────────────────────────────────────────────
-def _normalize_package(doc: dict[str, Any]) -> PackageOut:
-    days = [d for d in DAYS if d in set(split_codes(doc.get("days")))]
-    price = doc.get("price")
+def _row_to_package(row: dict[str, Any]) -> PackageOut:
+    days_raw = row.get("days") or []
+    # Postgres TEXT[] datang sebagai list Python dari psycopg2
+    if isinstance(days_raw, str):
+        days_raw = split_codes(days_raw)
+    days = [d for d in DAYS if d in set(days_raw)]
+    price = row.get("price")
     try:
         price_int = int(price) if price is not None else None
     except (TypeError, ValueError):
-        log.warning("Harga paket %s bukan angka, diabaikan: %r", doc.get("code"), price)
+        log.warning("Harga paket %s bukan angka, diabaikan: %r", row.get("code"), price)
         price_int = None
     return PackageOut(
-        code=str(doc.get("code") or doc.get("_id") or ""),
-        name=str(doc.get("name") or "—"),
+        code=str(row.get("code") or ""),
+        name=str(row.get("name") or "—"),
         days=days,
-        description=str(doc.get("description") or ""),
+        description=str(row.get("description") or ""),
         meal_count=len(days),
         price=price_int,
-        active=bool(doc.get("active", True)),
+        active=bool(row.get("active", True)),
     )
 
 
@@ -108,12 +103,12 @@ def list_packages(*, include_inactive: bool = False, use_cache: bool = True) -> 
             )
         )
     try:
-        rows = list(get_collection(COLLECTION_PACKAGES).find({}, sort={"code": 1}, limit=100))
+        rows = db.execute(f"SELECT * FROM {TABLE_PACKAGES} ORDER BY code")  # noqa: S608
     except Exception as exc:
-        log.error("Baca %s gagal: %s: %s", COLLECTION_PACKAGES, type(exc).__name__, exc)
+        log.error("Baca %s gagal: %s: %s", TABLE_PACKAGES, type(exc).__name__, exc)
         raise DatabaseError("Gagal membaca daftar paket.") from exc
 
-    out = [_normalize_package(d) for d in rows]
+    out = [_row_to_package(r) for r in rows]
     if not include_inactive:
         out = [p for p in out if p.active]
     return sorted(out, key=lambda p: p.code)
@@ -129,12 +124,9 @@ def get_package(code: str) -> PackageOut:
 
 # ── Menu mingguan ───────────────────────────────────────────────────────────
 def _critical_ingredient(bahan: dict[str, Any]) -> bool:
-    """Bahan dianggap alergen kritis bila `potensi_alergen` memuat penanda ⚠."""
     return "⚠" in str(bahan.get("potensi_alergen") or "")
 
 
-#: Pola negatif yang harus dibuang sebelum pencocokan kata kunci.
-#: "Saus Bawang Putih … tanpa kecap kedelai/terasi" TIDAK mengandung kedelai.
 _NEGATION_PATTERNS = (
     r"\btanpa\b[\w\s/-]{0,30}",
     r"\bbebas\b[\w\s/-]{0,20}",
@@ -153,7 +145,6 @@ def _strip_negations(text: str) -> str:
 
 
 def _detect_codes(texts: list[str]) -> list[str]:
-    """Petakan teks → kode katalog lewat pencocokan kata kunci (sudah antisipasi negasi)."""
     if not texts:
         return []
     blob = _strip_negations(" ".join(texts))
@@ -173,7 +164,6 @@ def _detect_codes(texts: list[str]) -> list[str]:
 
 
 def _theme_keywords(code: str) -> list[str]:
-    """Kata kunciBAHAN per tema alergen — lebih akurat dari label katalog."""
     return {
         "gluten": ["gluten", "gandum", "terigu", "mie", "roti", "biskuit"],
         "seafood": ["seafood", "ikan", "udang", "kepiting", "kerang", "cumi",
@@ -187,55 +177,52 @@ def _theme_keywords(code: str) -> list[str]:
     }.get(code.replace("alg_", ""), [])
 
 
-def _normalize_menu(doc: dict[str, Any]) -> MenuOut:
-    bahan_raw = [b for b in (doc.get("bahan_detail") or []) if isinstance(b, dict)]
+def _rows_to_menu(menu_row: dict[str, Any], ingredient_rows: list[dict[str, Any]]) -> MenuOut:
     ingredients = [
         {
-            "nama": str(b.get("nama") or ""),
-            "sumber": str(b.get("sumber") or ""),
-            "potensi_alergen": str(b.get("potensi_alergen") or ""),
-            "is_critical_allergen": _critical_ingredient(b),
+            "nama": str(r.get("nama") or ""),
+            "sumber": str(r.get("sumber") or ""),
+            "potensi_alergen": str(r.get("potensi_alergen") or ""),
+            "is_critical_allergen": bool(r.get("is_critical_allergen", False)),
         }
-        for b in bahan_raw
+        for r in sorted(ingredient_rows, key=lambda x: x.get("sort_order", 0))
     ]
 
-    # Sinyal otoritatif: bahan yang ditandai ⚠ oleh dapur.
     flagged = [i["nama"] for i in ingredients if i["is_critical_allergen"]]
     if flagged:
         codes = _detect_codes(flagged)
     else:
-        # Fallback: pindai nama menu + bahan, bukan deskripsi (banyak deskripsi
-        # memuat kalimat negatif seperti "tanpa kecap kedelai").
-        codes = _detect_codes([str(doc.get("nama_menu") or "")] + [i["nama"] for i in ingredients])
+        codes = _detect_codes([str(menu_row.get("nama_menu") or "")] + [i["nama"] for i in ingredients])
 
     labels = {a.code: a.label for a in list_allergens(include_inactive=True)}
-    hari = str(doc.get("hari") or "")
+    hari = str(menu_row.get("hari") or "")
+
+    # alat_dapur_steril: Postgres TEXT[] → list
+    alat_raw = menu_row.get("alat_dapur_steril") or []
+    if isinstance(alat_raw, str):
+        alat_raw = split_codes(alat_raw)
+
+    # package_codes: Postgres TEXT[] → list
+    pkg_raw = menu_row.get("package_codes") or []
+    if isinstance(pkg_raw, str):
+        pkg_raw = split_codes(pkg_raw)
+
     return MenuOut(
-        menu_id=str(doc.get("_id") or menu_doc_id(hari, str(doc.get("nama_menu") or ""))),
+        menu_id=str(menu_row.get("menu_id") or menu_doc_id(hari, str(menu_row.get("nama_menu") or ""))),
         hari=hari,
-        nama_menu=str(doc.get("nama_menu") or "—"),
-        deskripsi=str(doc.get("deskripsi") or ""),
+        nama_menu=str(menu_row.get("nama_menu") or "—"),
+        deskripsi=str(menu_row.get("deskripsi") or ""),
         bahan_detail=ingredients,
-        alat_dapur_steril=[str(a) for a in (doc.get("alat_dapur_steril") or []) if a],
+        alat_dapur_steril=[str(a) for a in alat_raw if a],
         allergen_codes=codes,
         allergen_labels=[labels.get(c, c) for c in codes],
-        # Absen = published. Enam dokumen live tidak punya field ini dan tetap
-        # harus tampil sebagai opsi yang bisa dipesan.
-        published=bool(doc.get("published", True)),
-        # Absen = tersedia untuk semua paket.
-        package_codes=[c for c in split_codes(doc.get("packages") or doc.get("package_codes")) if c],
-        option_index=int(doc.get("option_index") or 0),
+        published=bool(menu_row.get("published", True)),
+        package_codes=[c for c in pkg_raw if c],
+        option_index=int(menu_row.get("option_index") or 0),
     )
 
 
 def menu_doc_id(hari: str, nama_menu: str) -> str:
-    """
-    `_id` deterministik untuk satu opsi menu: `menu_<hari>_<slug>`.
-
-    Sebelumnya `_id` selalu `menu_<hari>`, sehingga hanya ada satu dokumen per
-    hari dan opsi kedua akan menimpa yang pertama. Menyertakan nama menu adalah
-    yang membuat satu hari bisa memegang beberapa opsi tanpa koleksi baru.
-    """
     slug = re.sub(r"[^a-z0-9]+", "-", nama_menu.lower()).strip("-")[:48]
     return f"menu_{hari.lower()}_{slug}" if slug else f"menu_{hari.lower()}"
 
@@ -245,12 +232,6 @@ def list_menus(
     use_cache: bool = True,
     include_unpublished: bool = False,
 ) -> list[MenuOut]:
-    """
-    Semua opsi menu, diurutkan per hari lalu per urutan opsi.
-
-    Tidak ada `limit` kecil di sini: 6 hari × N opsi melampaui batas lama 20, dan
-    pemotongan diam-diam akan menghilangkan opsi yang sebenarnya bisa dipesan.
-    """
     key = f"menus:{include_unpublished}"
     if use_cache:
         return list(
@@ -258,14 +239,30 @@ def list_menus(
         )
 
     try:
-        rows = list(
-            get_collection(COLLECTION_MENUS).find({}, sort={"hari": 1, "option_index": 1}, limit=500)
+        menu_rows = db.execute(
+            f"SELECT * FROM {TABLE_MENUS} ORDER BY hari, option_index"  # noqa: S608
+        )
+        if not menu_rows:
+            return []
+        menu_ids = [r["menu_id"] for r in menu_rows]
+        ing_rows = db.execute(
+            f"SELECT * FROM {TABLE_MENU_INGREDIENTS} WHERE menu_id = ANY(%s) ORDER BY sort_order",  # noqa: S608
+            (menu_ids,),
         )
     except Exception as exc:
-        log.error("Baca %s gagal: %s: %s", COLLECTION_MENUS, type(exc).__name__, exc)
+        log.error("Baca menu gagal: %s: %s", type(exc).__name__, exc)
         raise DatabaseError("Gagal membaca menu mingguan.") from exc
 
-    menus = [_normalize_menu(d) for d in rows if d.get("hari") in DAYS]
+    # Kelompokkan bahan per menu_id
+    ing_map: dict[str, list[dict[str, Any]]] = {}
+    for r in ing_rows:
+        ing_map.setdefault(r["menu_id"], []).append(r)
+
+    menus = [
+        _rows_to_menu(r, ing_map.get(r["menu_id"], []))
+        for r in menu_rows
+        if r.get("hari") in DAYS
+    ]
     if not include_unpublished:
         menus = [m for m in menus if m.published]
 
@@ -274,10 +271,8 @@ def list_menus(
 
 
 def menus_by_day(*, use_cache: bool = True) -> dict[str, list[MenuOut]]:
-    """Semua opsi per hari. Kunci dict = `DAYS`, nilai = daftar opsi (bisa kosong)."""
     if use_cache:
         return dict(_cached("menus_by_day_multi", lambda: menus_by_day(use_cache=False)))
-
     grouped: dict[str, list[MenuOut]] = {d: [] for d in DAYS}
     for menu in list_menus(use_cache=False):
         grouped.setdefault(menu.hari, []).append(menu)
@@ -285,13 +280,6 @@ def menus_by_day(*, use_cache: bool = True) -> dict[str, list[MenuOut]]:
 
 
 def primary_menu_by_day(*, use_cache: bool = True) -> dict[str, MenuOut]:
-    """
-    Satu opsi utama per hari.
-
-    Dipakai KDS dan rekap admin untuk pesanan yang belum menyimpan pilihan menu
-    per pelanggan. Pelanggan yang sudah memilih tetap memakai pilihannya sendiri —
-    lihat `order_service.resolve_service_menu`.
-    """
     if use_cache:
         return dict(_cached("menus_primary", lambda: primary_menu_by_day(use_cache=False)))
     return {
@@ -302,7 +290,6 @@ def primary_menu_by_day(*, use_cache: bool = True) -> dict[str, MenuOut]:
 
 
 def get_menu(menu_id: str) -> MenuOut:
-    """Cari satu opsi menu berdasarkan `menu_id` (nilai dokumen `_id`)."""
     menu_id = str(menu_id or "").strip()
     if not menu_id:
         raise NotFoundError("Menu tidak ditemukan.")
@@ -313,13 +300,6 @@ def get_menu(menu_id: str) -> MenuOut:
 
 
 def get_day_options(hari: str, *, package_code: str = "") -> list[MenuOut]:
-    """
-    Opsi yang boleh dipilih untuk satu hari pada satu paket.
-
-    Ini satu-satunya tempat ketersediaan paket ditegakkan saat PEMBACAAN; saat
-    PEMBUATAN pesanan, `order_service.validate_selections` menegakkan aturan yang
-    sama dari sisi lain, supaya tidak bisa dilewati dengan mengirim `menu_id` langsung.
-    """
     options = menus_by_day().get(hari, [])
     if package_code:
         options = [m for m in options if m.available_for(package_code)]
@@ -333,7 +313,6 @@ def load_catalog(*, include_inactive: bool = False, use_cache: bool = True) -> d
         cached = _cache.get(key)
         if cached is not None:
             return cached
-
     value = {
         "packages": list_packages(include_inactive=include_inactive),
         "allergens": list_allergens(include_inactive=include_inactive),
@@ -345,49 +324,202 @@ def load_catalog(*, include_inactive: bool = False, use_cache: bool = True) -> d
 
 
 def invalidate_cache() -> None:
-    """Panggil setelah admin menulis katalog."""
     _cache.invalidate()
     log.info("Cache katalog dibersihkan.")
 
 
 def upsert_document(collection: str, doc: dict[str, Any]) -> None:
-    if "_id" not in doc:
-        raise ValidationError("Dokumen harus memiliki `_id`.")
-    try:
-        get_collection(collection).find_one_and_replace(
-            filter={"_id": doc["_id"]}, replacement=doc, upsert=True
-        )
-    except Exception as exc:
-        log.error("Upsert %s/%s gagal: %s: %s", collection, doc["_id"], type(exc).__name__, exc)
-        raise DatabaseError(f"Gagal menyimpan ke collection '{collection}'.") from exc
+    """
+    Kompatibilitas dengan service lama yang memanggil upsert_document.
+
+    Di Postgres kita routing berdasarkan nama collection/tabel:
+    packages, allergens, menus (dengan menu_ingredients).
+    """
+    if collection == TABLE_PACKAGES:
+        _upsert_package(doc)
+    elif collection == TABLE_ALLERGENS:
+        _upsert_allergen(doc)
+    elif collection == TABLE_MENUS:
+        _upsert_menu(doc)
+    else:
+        raise ValidationError(f"Tabel '{collection}' tidak dikenali untuk upsert_document.")
     invalidate_cache()
 
 
+def _upsert_package(doc: dict[str, Any]) -> None:
+    code = str(doc.get("code") or doc.get("_id") or "")
+    if not code:
+        raise ValidationError("Paket harus memiliki kode.")
+    days_raw = doc.get("days") or []
+    if isinstance(days_raw, str):
+        days_raw = split_codes(days_raw)
+    try:
+        db.execute_write(
+            """
+            INSERT INTO packages (code, name, days, description, price, active)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (code) DO UPDATE SET
+                name = EXCLUDED.name,
+                days = EXCLUDED.days,
+                description = EXCLUDED.description,
+                price = EXCLUDED.price,
+                active = EXCLUDED.active
+            """,
+            (
+                code,
+                str(doc.get("name") or ""),
+                days_raw,
+                str(doc.get("description") or ""),
+                doc.get("price"),
+                bool(doc.get("active", True)),
+            ),
+        )
+    except Exception as exc:
+        raise DatabaseError(f"Gagal menyimpan paket '{code}'.") from exc
+
+
+def _upsert_allergen(doc: dict[str, Any]) -> None:
+    code = normalize_allergen_code(str(doc.get("code") or doc.get("_id") or ""))
+    if not code:
+        raise ValidationError("Alergen harus memiliki kode.")
+    try:
+        db.execute_write(
+            """
+            INSERT INTO allergens (code, label, risiko, active, category)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (code) DO UPDATE SET
+                label = EXCLUDED.label,
+                risiko = EXCLUDED.risiko,
+                active = EXCLUDED.active,
+                category = EXCLUDED.category
+            """,
+            (
+                code,
+                str(doc.get("label") or ""),
+                str(doc.get("risiko") or ""),
+                bool(doc.get("active", True)),
+                str(doc.get("category") or "allergy"),
+            ),
+        )
+    except Exception as exc:
+        raise DatabaseError(f"Gagal menyimpan alergen '{code}'.") from exc
+
+
+def _upsert_menu(doc: dict[str, Any]) -> None:
+    hari = str(doc.get("hari") or "")
+    nama = str(doc.get("nama_menu") or "")
+    menu_id = str(doc.get("menu_id") or doc.get("_id") or menu_doc_id(hari, nama))
+    if not hari or not nama:
+        raise ValidationError("Menu harus memiliki hari dan nama_menu.")
+
+    alat_raw = doc.get("alat_dapur_steril") or []
+    if isinstance(alat_raw, str):
+        alat_raw = split_codes(alat_raw)
+    pkg_raw = doc.get("package_codes") or doc.get("packages") or []
+    if isinstance(pkg_raw, str):
+        pkg_raw = split_codes(pkg_raw)
+
+    try:
+        db.execute_write(
+            """
+            INSERT INTO menus (menu_id, hari, nama_menu, deskripsi, alat_dapur_steril,
+                               published, package_codes, option_index)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (menu_id) DO UPDATE SET
+                hari = EXCLUDED.hari,
+                nama_menu = EXCLUDED.nama_menu,
+                deskripsi = EXCLUDED.deskripsi,
+                alat_dapur_steril = EXCLUDED.alat_dapur_steril,
+                published = EXCLUDED.published,
+                package_codes = EXCLUDED.package_codes,
+                option_index = EXCLUDED.option_index
+            """,
+            (
+                menu_id, hari, nama,
+                str(doc.get("deskripsi") or ""),
+                alat_raw,
+                bool(doc.get("published", True)),
+                pkg_raw,
+                int(doc.get("option_index") or 0),
+            ),
+        )
+        # Ganti semua bahan (delete + insert) — sederhana & aman
+        db.execute_write(
+            f"DELETE FROM {TABLE_MENU_INGREDIENTS} WHERE menu_id = %s",  # noqa: S608
+            (menu_id,),
+        )
+        bahan_raw = [b for b in (doc.get("bahan_detail") or []) if isinstance(b, dict)]
+        for i, bahan in enumerate(bahan_raw):
+            db.execute_write(
+                """
+                INSERT INTO menu_ingredients
+                    (menu_id, nama, sumber, potensi_alergen, is_critical_allergen, sort_order)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    menu_id,
+                    str(bahan.get("nama") or ""),
+                    str(bahan.get("sumber") or ""),
+                    str(bahan.get("potensi_alergen") or ""),
+                    "⚠" in str(bahan.get("potensi_alergen") or ""),
+                    i,
+                ),
+            )
+    except Exception as exc:
+        raise DatabaseError(f"Gagal menyimpan menu '{menu_id}'.") from exc
+
+
 def update_fields(collection: str, doc_id: str, fields: dict[str, Any]) -> bool:
+    """Update field tertentu pada satu baris."""
     if not doc_id:
         raise ValidationError("doc_id wajib diisi.")
+    if not fields:
+        return True
+
+    if collection == TABLE_PACKAGES:
+        pk_col = "code"
+    elif collection == TABLE_ALLERGENS:
+        pk_col = "code"
+    elif collection == TABLE_MENUS:
+        pk_col = "menu_id"
+    else:
+        raise ValidationError(f"Tabel '{collection}' tidak dikenali untuk update_fields.")
+
+    # Hanya izinkan nama kolom alfanumerik+underscore
+    safe_fields = {k: v for k, v in fields.items() if re.match(r"^[a-z_]+$", k)}
+    if not safe_fields:
+        return True
+
+    set_clause = ", ".join(f"{k} = %s" for k in safe_fields)
+    values = tuple(safe_fields.values()) + (doc_id,)
     try:
-        get_collection(collection).update_one({"_id": doc_id}, {"$set": fields})
+        db.execute_write(
+            f"UPDATE {collection} SET {set_clause} WHERE {pk_col} = %s",  # noqa: S608
+            values,
+        )
     except Exception as exc:
-        log.error("Update %s/%s gagal: %s: %s", collection, doc_id, type(exc).__name__, exc)
-        raise DatabaseError(f"Gagal memperbarui dokumen '{doc_id}'.") from exc
+        raise DatabaseError(f"Gagal memperbarui '{doc_id}' di '{collection}'.") from exc
     invalidate_cache()
     return True
 
 
 def get_raw(collection: str, doc_id: str) -> dict[str, Any] | None:
-    try:
-        return get_collection(collection).find_one({"_id": doc_id})
-    except Exception as exc:
-        log.error("Baca %s/%s gagal: %s: %s", collection, doc_id, type(exc).__name__, exc)
-        raise DatabaseError(f"Gagal membaca dokumen '{doc_id}'.") from exc
+    if collection == TABLE_PACKAGES:
+        return db.execute_one(f"SELECT * FROM {TABLE_PACKAGES} WHERE code = %s", (doc_id,))  # noqa: S608
+    if collection == TABLE_ALLERGENS:
+        return db.execute_one(f"SELECT * FROM {TABLE_ALLERGENS} WHERE code = %s", (doc_id,))  # noqa: S608
+    if collection == TABLE_MENUS:
+        return db.execute_one(f"SELECT * FROM {TABLE_MENUS} WHERE menu_id = %s", (doc_id,))  # noqa: S608
+    raise DatabaseError(f"Tabel '{collection}' tidak dikenali.")
 
 
 def fetch_collection(collection: str, *, limit: int = 200, sort: dict | None = None) -> list[dict[str, Any]]:
+    # sort dict tidak dipakai di Postgres — gunakan ORDER BY default per tabel
+    order_col = "code" if collection in (TABLE_PACKAGES, TABLE_ALLERGENS) else "menu_id"
     try:
-        return list(
-            get_collection(collection).find({}, sort=sort or {"_id": 1}, limit=limit)
+        return db.execute(
+            f"SELECT * FROM {collection} ORDER BY {order_col} LIMIT %s",  # noqa: S608
+            (limit,),
         )
     except Exception as exc:
-        log.error("Baca collection %s gagal: %s: %s", collection, type(exc).__name__, exc)
-        raise DatabaseError(f"Gagal membaca collection '{collection}'.") from exc
+        raise DatabaseError(f"Gagal membaca tabel '{collection}'.") from exc

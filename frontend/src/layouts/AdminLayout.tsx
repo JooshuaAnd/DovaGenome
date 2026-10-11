@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CalendarDays, ExternalLink, LayoutDashboard } from 'lucide-react'
+import { ExternalLink, LayoutDashboard } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import type { NavItem } from '@/components/layout/Sidebar'
@@ -21,8 +21,7 @@ export function AdminLayout({
   const { customer } = useAuth()
 
   const nav: NavItem[] = [
-    { to: '/admin', label: 'Ringkasan', icon: LayoutDashboard, end: true },
-    { to: '/admin/daily-menu', label: 'Menu Harian', icon: CalendarDays },
+    { to: '/admin', label: 'Ringkasan & KDS', icon: LayoutDashboard, end: true },
   ]
 
   return (

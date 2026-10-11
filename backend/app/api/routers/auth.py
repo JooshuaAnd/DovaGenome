@@ -8,6 +8,7 @@ from app.api.deps import client_info, get_current_customer
 from app.core.logging import get_logger
 from app.schemas.customer import (
     CustomerOut,
+    CustomerSignIn,
     LoginIn,
     RegisterIn,
     TelegramLinkIn,
@@ -31,6 +32,24 @@ def register(payload: RegisterIn) -> TokenOut:
     bisa membuat pesanan sampai Telegram tertaut — lihat `/customers/me/telegram`.
     """
     return auth_service.register_customer(payload)
+
+
+@router.post(
+    "/customer",
+    response_model=TokenOut,
+    summary="Masuk / daftar pelanggan (nama + telepon)",
+)
+def customer_sign_in(payload: CustomerSignIn, request: Request) -> TokenOut:
+    """
+    Satu form untuk pelanggan: nama lengkap + nomor telepon.
+
+    Nomor telepon adalah pengenal unik — bila sudah terdaftar maka langsung
+    masuk, bila belum maka akun pelanggan dibuat. Tidak ada kata sandi, dan
+    Telegram tidak wajib ditautkan untuk bisa memesan di web.
+    """
+    client = client_info(request)
+    login_limiter.enforce(f"customer:{client['ip']}")
+    return auth_service.sign_in_customer(payload)
 
 
 @router.post("/login", response_model=TokenOut, summary="Masuk")

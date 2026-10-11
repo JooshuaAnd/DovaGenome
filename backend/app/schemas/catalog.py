@@ -193,7 +193,7 @@ class CatalogOut(ApiModel):
     menus: list[MenuOut]
     service_days: list[str]
     is_live: bool
-    source: str = "astra"
+    source: str = "supabase"
 
 
 class CatalogMetaOut(ApiModel):

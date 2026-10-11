@@ -1,8 +1,8 @@
-"""Aplikasi FastAPI DovaGenome AI.
+"""Aplikasi FastAPI DovaGenome AI (Precision Catering).
 
 Titik masuk tunggal backend. Tanggung jawab file ini hanya:
   * konfigurasi middleware (CORS, security headers),
-  * lifecycle (koneksi Astra, cache, cleanup),
+  * lifecycle (koneksi Supabase, cache, cleanup),
   * pemasangan router,
   * pemetaan error domain → JSON yang konsisten.
 
@@ -24,7 +24,7 @@ from app.api.routers import api_router
 from app.core.config import settings
 from app.core.errors import AppError, TooManyRequestsError
 from app.core.logging import configure_logging, get_logger
-from app.repositories import astra, catalog_repo
+from app.repositories import supabase, catalog_repo
 from app.services.langflow_service import langflow_service as ai_client
 
 configure_logging()
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     Startup & shutdown.
 
-    Koneksi Astra dibuat lebih awal supaya kegagalan credential terlihat di
+    Koneksi Supabase dibuat lebih awal supaya kegagalan credential terlihat di
     log server, bukan muncul sporadik sebagai 500 saat user sedang memesan.
     """
     log.info(
@@ -44,17 +44,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.app_name, settings.environment, settings.demo_mode,
     )
 
-    connected = astra.is_connected()
+    connected = supabase.is_connected()
     if connected:
-        created = astra.ensure_collections()
-        log.info(
-            "astra_connected collections_ready=%d created=%s",
-            len(astra.MANAGED_COLLECTIONS), created or "-",
-        )
+        migrations_ok = supabase.check_migrations()
+        if migrations_ok:
+            log.info("supabase_connected migrations=ok")
+        else:
+            log.error(
+                "supabase_connected migrations=MISSING — jalankan: "
+                "psql $DATABASE_URL -f supabase/migrations/001_schema.sql"
+            )
     else:
         log.error(
-            "astra_unreachable — KDS & admin TIDAK akan menampilkan data contoh. "
-            "Periksa ASTRA_DB_API_ENDPOINT & ASTRA_DB_APPLICATION_TOKEN."
+            "supabase_unreachable — KDS & admin TIDAK akan menampilkan data. "
+            "Periksa SUPABASE_DB_API_ENDPOINT & SUPABASE_DB_APPLICATION_TOKEN."
         )
 
     if settings.demo_mode:
@@ -65,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         catalog_repo.invalidate_cache()
         ai_client.close()
-        astra.reset_connection()
+        supabase.reset_connection()
         log.info("shutdown selesai")
 
 
@@ -184,6 +187,13 @@ async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
+@app.get("/health", include_in_schema=False)
+def top_level_health() -> Any:
+    """Top-level health check alias."""
+    from app.api.routers.health import health as health_fn
+    return health_fn()
+
+
 @app.get("/", include_in_schema=False)
 def root() -> dict[str, str]:
     """Root ringkas supaya developer tidak salah mengira server mati."""
@@ -192,4 +202,4 @@ def root() -> dict[str, str]:
         "version": settings.app_version,
         "docs": "/docs",
         "api": settings.api_prefix,
-    }
+    }

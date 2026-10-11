@@ -1,7 +1,7 @@
 """Konfigurasi aplikasi — sumber tunggal untuk seluruh environment variable.
 
 Aturan keras:
-  * Tidak ada credential default. `ASTRA_DB_*` dan `LANGFLOW_API_KEY` wajib diisi.
+  * Tidak ada credential default. `SUPABASE_*` dan `LANGFLOW_API_KEY` wajib diisi.
   * `.env` dibaca dari repo root (`../.env`) atau `backend/.env`.
   * Nilai rahasia tidak pernah masuk ke response API.
 """
@@ -38,20 +38,44 @@ class Settings(BaseSettings):
         default="http://localhost:5173,http://127.0.0.1:5173"
     )
 
-    # ── Astra DB ────────────────────────────────────────────────────────────
-    astra_db_api_endpoint: str
-    astra_db_application_token: str
+    # ── Supabase / Postgres ─────────────────────────────────────────────────
+    # Opsi 1: DSN lengkap — paling fleksibel.
+    supabase_url: str = Field(default="")
+
+    # Opsi 2: komponen terpisah — pakai nama variable yang sudah diisi user.
+    # SUPABASE_DB_API_ENDPOINT  = host Supabase (mis. db.xxxx.supabase.co)
+    # SUPABASE_DB_APPLICATION_TOKEN = postgres password / service key
+    supabase_db_api_endpoint: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "SUPABASE_DB_API_ENDPOINT", "SUPABASE_HOST"
+        ),
+    )
+    supabase_db_application_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "SUPABASE_DB_APPLICATION_TOKEN", "SUPABASE_SERVICE_KEY",
+            "SUPABASE_PASSWORD",
+        ),
+    )
+    supabase_db_name: str = Field(default="postgres")
+    supabase_db_user: str = Field(default="postgres")
+    supabase_db_port: int = Field(default=5432)
 
     # ── Langflow ────────────────────────────────────────────────────────────
-    langflow_api_url: str
-    langflow_api_key: str
+    langflow_api_url: str = Field(default="")
+    langflow_api_key: str = Field(default="")
     langflow_flow_id: str = ""
     langflow_timeout_seconds: float = Field(default=30.0)
     langflow_max_retries: int = Field(default=1)
 
+    # ── IBM Watsonx / Bob AI ────────────────────────────────────────────────
+    api_key_ibm_bob: str = Field(
+        default="",
+        validation_alias=AliasChoices("API_KEY_IBM_BOB", "IBM_BOB_API_KEY", "BOB_API_KEY"),
+    )
+
     # ── Telegram ────────────────────────────────────────────────────────────
-    # `TELEGRAM_TOKEN` adalah nama lama di root `.env`; keduanya diterima agar
-    # tidak perlu mengganti file env yang sudah ada.
     telegram_bot_token: str = Field(
         default="", validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN")
     )
@@ -63,22 +87,23 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="dev-only-change-me")
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = Field(default=60 * 24 * 7)
-    # Akun tanpa password_hash boleh login hanya dengan username.
-    # Aktifkan hanya untuk MVP; admin/kitchen WAJIB memakai password.
     allow_passwordless_login: bool = Field(default=True)
     telegram_link_code_ttl_minutes: int = Field(default=10)
 
     # ── Data ────────────────────────────────────────────────────────────────
     catalog_cache_ttl_seconds: int = Field(default=120)
-    # Saat Astra DB tidak tersambung, JANGAN pernah menyajikan pesanan contoh
-    # ke KDS/admin. Default wajib False.
     demo_mode: bool = Field(default=False)
     default_currency: str = "IDR"
 
-    @field_validator("astra_db_api_endpoint")
+    @field_validator("supabase_db_api_endpoint")
     @classmethod
-    def _strip_endpoint(cls, v: str) -> str:
-        return v.strip().rstrip("/")
+    def _strip_host(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        # Buang scheme bila user menempel URL penuh
+        for prefix in ("https://", "http://"):
+            if v.startswith(prefix):
+                v = v[len(prefix):]
+        return v
 
     @field_validator("telegram_bot_username")
     @classmethod
@@ -91,13 +116,6 @@ class Settings(BaseSettings):
 
     @property
     def langflow_run_url(self) -> str:
-        """
-        URL run Langflow.
-
-        `LANGFLOW_API_URL` boleh berupa base (`http://host:7860/api/v1`),
-        base + `/run`, atau URL run lengkap. Yang sudah memuat `/run`
-        dipakai apa adanya supaya flow id tidak terduplikasi.
-        """
         url = self.langflow_api_url.strip().rstrip("/")
         if "/run" in url:
             return url
@@ -119,14 +137,17 @@ class Settings(BaseSettings):
 
     def credential_status(self) -> dict[str, bool]:
         """Status isi credential untuk endpoint diagnosa — nilai tidak pernah dibocorkan."""
+        db_configured = bool(self.supabase_url or (
+            self.supabase_db_api_endpoint and self.supabase_db_application_token
+        ))
         return {
-            "ASTRA_DB_API_ENDPOINT": bool(self.astra_db_api_endpoint),
-            "ASTRA_DB_APPLICATION_TOKEN": bool(self.astra_db_application_token),
+            "SUPABASE_DB": db_configured,
             "LANGFLOW_API_URL": bool(self.langflow_api_url),
             "LANGFLOW_API_KEY": bool(self.langflow_api_key),
             "LANGFLOW_FLOW_ID": bool(self.langflow_flow_id),
             "TELEGRAM_BOT_TOKEN": bool(self.telegram_bot_token),
             "TELEGRAM_BOT_USERNAME": bool(self.telegram_bot_username),
+            "API_KEY_IBM_BOB": bool(self.api_key_ibm_bob),
             "JWT_SECRET": self.jwt_secret != "dev-only-change-me",
         }
 

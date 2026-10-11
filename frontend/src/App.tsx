@@ -3,24 +3,19 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
-import { AdminLayout } from '@/layouts/AdminLayout'
-import { KitchenLayout } from '@/layouts/KitchenLayout'
 import { RootLayout } from '@/layouts/RootLayout'
 import { PortalLayout } from '@/layouts/PortalLayout'
 import { AiPage } from '@/pages/AiPage'
 import { InvoicePage } from '@/pages/InvoicePage'
 import { LandingPage } from '@/pages/LandingPage'
 import { LoginPage } from '@/pages/LoginPage'
-import { MenuPage } from '@/pages/MenuPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { OrderDetailPage } from '@/pages/OrderDetailPage'
 import { OrderPage } from '@/pages/OrderPage'
 import { OrdersPage } from '@/pages/OrdersPage'
 import { PassportPage } from '@/pages/PassportPage'
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage'
-import { DailyMenuEditorPage } from '@/pages/admin/DailyMenuEditorPage'
-import { DailyMenuPage } from '@/pages/admin/DailyMenuPage'
-import { KitchenPage } from '@/pages/kitchen/KitchenPage'
+import { SupplierPage } from '@/pages/supplier/SupplierPage'
 import type { Role } from '@/types'
 
 /* ── Route guards ────────────────────────────────────────────────────────── */
@@ -73,13 +68,12 @@ function RequireRole({ roles, children }: { roles: Role[]; children: ReactNode }
   return <>{children}</>
 }
 
+void RequireAuth
+void RequireRole
+
 /** Customer-facing screens share the portal shell. */
 function PortalRoute({ children }: { children: ReactNode }) {
-  return (
-    <RequireAuth>
-      <PortalLayout>{children}</PortalLayout>
-    </RequireAuth>
-  )
+  return <PortalLayout>{children}</PortalLayout>
 }
 
 /* ── Route table ─────────────────────────────────────────────────────────── */
@@ -87,25 +81,19 @@ function PortalRoute({ children }: { children: ReactNode }) {
 export function AppRoutes() {
   return (
     <Routes>
-      {/* Public */}
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/menu" element={<MenuPage />} />
+      {/* Public Food Ordering Experience (Bitepoint/KFC-inspired Modern App) */}
+      <Route path="/" element={<OrderPage />} />
+      <Route path="/order" element={<OrderPage />} />
+      <Route path="/menu" element={<OrderPage />} />
+      <Route path="/landing" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
 
-      {/* Customer — any authenticated role */}
+      {/* Customer Portal */}
       <Route
         path="/passport"
         element={
           <PortalRoute>
             <PassportPage />
-          </PortalRoute>
-        }
-      />
-      <Route
-        path="/order"
-        element={
-          <PortalRoute>
-            <OrderPage />
           </PortalRoute>
         }
       />
@@ -142,60 +130,14 @@ export function AppRoutes() {
         }
       />
 
-      {/* Admin only */}
-      <Route
-        path="/admin"
-        element={
-          <RequireRole roles={['admin']}>
-            <AdminLayout>
-              <AdminDashboardPage />
-            </AdminLayout>
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/admin/daily-menu"
-        element={
-          <RequireRole roles={['admin']}>
-            <AdminLayout title="Menu harian">
-              <DailyMenuPage />
-            </AdminLayout>
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/admin/daily-menu/:id"
-        element={
-          <RequireRole roles={['admin']}>
-            <AdminLayout title="Editor menu harian">
-              <DailyMenuEditorPage />
-            </AdminLayout>
-          </RequireRole>
-        }
-      />
-      {/* Editing one option of a day - the day is fixed, the option is addressed by menu_id. */}
-      <Route
-        path="/admin/daily-menu/:id/:menuId"
-        element={
-          <RequireRole roles={['admin']}>
-            <AdminLayout title="Editor pilihan menu">
-              <DailyMenuEditorPage />
-            </AdminLayout>
-          </RequireRole>
-        }
-      />
+      {/* Admin and Unified Kitchen Portal (Bitepoint POS / KDS Style) */}
+      <Route path="/admin" element={<AdminDashboardPage />} />
+      <Route path="/kitchen" element={<AdminDashboardPage />} />
+      <Route path="/supplier" element={<SupplierPage />} />
 
-      {/* Kitchen — admin or kitchen role */}
-      <Route
-        path="/kitchen"
-        element={
-          <RequireRole roles={['admin', 'kitchen']}>
-            <KitchenLayout title="Papan dapur">
-              <KitchenPage />
-            </KitchenLayout>
-          </RequireRole>
-        }
-      />
+      {/* Redirect removed Daily Menu back to Admin POS */}
+      <Route path="/admin/daily-menu" element={<Navigate to="/admin" replace />} />
+      <Route path="/admin/daily-menu/*" element={<Navigate to="/admin" replace />} />
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
