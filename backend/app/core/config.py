@@ -66,8 +66,32 @@ class Settings(BaseSettings):
     langflow_api_url: str = Field(default="")
     langflow_api_key: str = Field(default="")
     langflow_flow_id: str = ""
+    langflow_internal_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "LANGFLOW_INTERNAL_TOKEN", "DOVAGENOME_INTERNAL_TOKEN"
+        ),
+    )
     langflow_timeout_seconds: float = Field(default=30.0)
+    langflow_recipe_timeout_seconds: float = Field(default=180.0, ge=30.0, le=300.0)
     langflow_max_retries: int = Field(default=1)
+    ai_mode: str = Field(default="required_langflow")
+
+    # ── OpenAI recipe draft (vision + web search) ───────────────────────
+    # Kept separate from the customer-facing Langflow assistant. The key is
+    # server-only and is never sent to React.
+    openai_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("API_KEY_ADMIN", "OPENAI_API_KEY"),
+    )
+    openai_recipe_model: str = Field(default="gpt-4.1-mini")
+    openai_recipe_web_search: bool = Field(default=True)
+    openai_recipe_timeout_seconds: float = Field(default=45.0, ge=5.0, le=120.0)
+
+    # ── Pembayaran ─────────────────────────────────────────────────────────
+    payment_webhook_secret: str = Field(default="")
+    payment_intent_ttl_minutes: int = Field(default=10, ge=1, le=60)
+    marketing_delivery_webhook_secret: str = Field(default="")
 
     # ── IBM Watsonx / Bob AI ────────────────────────────────────────────────
     api_key_ibm_bob: str = Field(
@@ -82,6 +106,10 @@ class Settings(BaseSettings):
     telegram_bot_username: str = Field(
         default="", validation_alias=AliasChoices("TELEGRAM_BOT_USERNAME", "TELEGRAM_BOT")
     )
+    # Telegram chat IDs allowed to review procurement drafts.
+    telegram_admin_chat_ids: str = ""
+    # Existing admin customer ID used for audit_log and FK-safe approvals.
+    telegram_admin_customer_id: str = ""
 
     # ── Auth ────────────────────────────────────────────────────────────────
     jwt_secret: str = Field(default="dev-only-change-me")
@@ -105,10 +133,31 @@ class Settings(BaseSettings):
                 v = v[len(prefix):]
         return v
 
+    @field_validator("debug", mode="before")
+    @classmethod
+    def _coerce_debug_flag(cls, v: object) -> object:
+        """Accept deployment labels such as DEBUG=release as non-debug mode."""
+        if isinstance(v, str):
+            normalized = v.strip().lower()
+            if normalized in {"release", "production", "prod", "false", "0", "no", "off", ""}:
+                return False
+            if normalized in {"debug", "development", "true", "1", "yes", "on"}:
+                return True
+        return v
+
     @field_validator("telegram_bot_username")
     @classmethod
     def _normalize_username(cls, v: str) -> str:
         return (v or "").strip().lstrip("@")
+
+    @field_validator("ai_mode")
+    @classmethod
+    def _validate_ai_mode(cls, v: str) -> str:
+        value = (v or "").strip().lower()
+        allowed = {"required_langflow", "allow_explicit_fallback", "disabled"}
+        if value not in allowed:
+            raise ValueError(f"AI_MODE harus salah satu dari {sorted(allowed)}.")
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -145,8 +194,14 @@ class Settings(BaseSettings):
             "LANGFLOW_API_URL": bool(self.langflow_api_url),
             "LANGFLOW_API_KEY": bool(self.langflow_api_key),
             "LANGFLOW_FLOW_ID": bool(self.langflow_flow_id),
+            "LANGFLOW_INTERNAL_TOKEN": bool(self.langflow_internal_token),
+            "OPENAI_API_KEY": bool(self.openai_api_key),
+            "PAYMENT_WEBHOOK_SECRET": bool(self.payment_webhook_secret),
+              "MARKETING_DELIVERY_WEBHOOK_SECRET": bool(self.marketing_delivery_webhook_secret),
             "TELEGRAM_BOT_TOKEN": bool(self.telegram_bot_token),
             "TELEGRAM_BOT_USERNAME": bool(self.telegram_bot_username),
+            "TELEGRAM_ADMIN_CHAT_IDS": bool(self.telegram_admin_chat_ids.strip()),
+            "TELEGRAM_ADMIN_CUSTOMER_ID": bool(self.telegram_admin_customer_id.strip()),
             "API_KEY_IBM_BOB": bool(self.api_key_ibm_bob),
             "JWT_SECRET": self.jwt_secret != "dev-only-change-me",
         }

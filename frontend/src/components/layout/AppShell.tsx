@@ -23,6 +23,8 @@ export interface AppShellProps {
   topbarActions?: ReactNode
   /** Constrain the main column and widen it for dense data tables. */
   width?: 'default' | 'wide' | 'full'
+  /** Sidebar selection color, allowing each product surface to keep its brand. */
+  navAccent?: 'forest' | 'red'
   children: ReactNode
   className?: string
 }
@@ -47,6 +49,7 @@ export function AppShell({
   sidebarFooter,
   topbarActions,
   width = 'default',
+  navAccent = 'forest',
   children,
   className,
 }: AppShellProps) {
@@ -56,7 +59,7 @@ export function AppShell({
     <div className="min-h-dvh lg:flex">
       {/* Persistent sidebar — desktop and tablet. */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block lg:w-64 xl:w-72">
-        <Sidebar items={nav} label={navLabel} footer={sidebarFooter} className="h-full" />
+        <Sidebar items={nav} label={navLabel} footer={sidebarFooter} accent={navAccent} className="h-full" />
       </aside>
 
       {/* Slide-over navigation — small screens. */}
@@ -64,12 +67,13 @@ export function AppShell({
         <SheetContent side="left" className="w-72 p-0">
           <SheetHeader className="px-5 pt-5 pb-4">
             <SheetTitle asChild>
-              <Brand size="md" asLink />
+              <Brand size="md" asLink tone={navAccent} />
             </SheetTitle>
           </SheetHeader>
           <SidebarNav
             items={nav}
             label={navLabel}
+            accent={navAccent}
             onNavigate={() => setNavOpen(false)}
             className="px-3 pb-6"
           />

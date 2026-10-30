@@ -86,7 +86,7 @@ class CatalogContext:
     """
     Katalog yang sudah dimuat satu kali untuk satu laporan safety.
 
-    Tanpa ini `build_report` untuk 6 hari akan membaca Astra 6× menu + 12×
+    Tanpa ini `build_report` untuk 6 hari akan membaca Supabase 6× menu + 12×
     label — cukup untuk membuat satu permintaan terasa macet.
 
     `menus` bernilai `hari -> daftar opsi`. Dahulu bernilai `hari -> satu menu`,
@@ -107,6 +107,15 @@ class CatalogContext:
 
 def _context(ctx: CatalogContext | None) -> CatalogContext:
     return ctx if ctx is not None else CatalogContext()
+
+
+def _recipe_requires_verification(menu: Any) -> bool:
+    """Return true unless a recipe version and every component are verified."""
+    return bool(
+        str(getattr(menu, "recipe_verification_status", "UNVERIFIED")) != "VERIFIED"
+        or getattr(menu, "recipe_has_unresolved_components", True)
+        or str(getattr(menu, "recipe_cross_contact_risk", "UNKNOWN")) == "UNKNOWN"
+    )
 
 
 def check_menu(
@@ -161,6 +170,8 @@ def check_menu(
     soft_conflicts = [c for c in conflicts if c.category not in SAFETY_CRITICAL_CATEGORIES]
     preference_hits = sorted(preference_codes & set(menu.allergen_codes))
 
+    recipe_requires_verification = _recipe_requires_verification(menu)
+
     if critical_conflicts:
         level = SafetyLevel.BLOCKED
         names = ", ".join(c.allergen_label for c in critical_conflicts)
@@ -173,6 +184,18 @@ def check_menu(
             "Pilih menu lain untuk hari ini, atau minta dapur menyiapkan menu "
             "alternatif dengan protokol steril terpisah. Jangan konsumsi hidangan "
             "ini bila alergi Anda berat."
+        )
+        recommended = False
+    elif recipe_requires_verification:
+        level = SafetyLevel.REQUIRES_VERIFICATION
+        headline = f"Menu {day} belum dapat dinyatakan eligible."
+        explanation = (
+            f"{menu.nama_menu} belum memiliki recipe/BOM yang diverifikasi lengkap "
+            "oleh operator."
+        )
+        guidance = (
+            "Pilih menu yang sudah terverifikasi atau minta admin memeriksa "
+            "ingredient, takaran, dan risiko kontaminasi silang."
         )
         recommended = False
     elif soft_conflicts or preference_hits:
@@ -297,7 +320,7 @@ def check_day_options(
 
 
 def check_selected(
-    selections: dict[str, str],
+    selections: dict[str, str | list[str]],
     excluded_codes: set[str],
     *,
     preference_codes: set[str] | None = None,
@@ -316,29 +339,32 @@ def check_selected(
         if day not in selections:
             continue
         options = catalog.menus.get(day) or []
-        wanted = selections[day]
-        chosen = next((m for m in options if m.menu_id == wanted), None) or (
-            options[0] if options else None
-        )
-        if chosen is None:
+        wanted_ids = selections[day]
+        if isinstance(wanted_ids, str):
+            wanted_ids = [wanted_ids]
+        for wanted in wanted_ids:
+            chosen = next((m for m in options if m.menu_id == wanted), None) or (
+                options[0] if options else None
+            )
+            if chosen is None:
+                out.append(
+                    DaySafetyOut(
+                        hari=day,
+                        menu_id=wanted,
+                        nama_menu="Menu belum dipublikasikan",
+                        level=SafetyLevel.SAFE,
+                        headline="Menu hari ini belum tersedia.",
+                        guidance="Tim dapur belum memasukkan menu untuk hari ini.",
+                        is_recommended=True,
+                    )
+                )
+                continue
             out.append(
-                DaySafetyOut(
-                    hari=day,
-                    menu_id=wanted,
-                    nama_menu="Menu belum dipublikasikan",
-                    level=SafetyLevel.SAFE,
-                    headline="Menu hari ini belum tersedia.",
-                    guidance="Tim dapur belum memasukkan menu untuk hari ini.",
-                    is_recommended=True,
+                check_menu(
+                    day, chosen, excluded_codes,
+                    preference_codes=preference_codes, catalog=catalog,
                 )
             )
-            continue
-        out.append(
-            check_menu(
-                day, chosen, excluded_codes,
-                preference_codes=preference_codes, catalog=catalog,
-            )
-        )
     return out
 
 
@@ -382,6 +408,9 @@ def _rollup(
     """
     labels = _label_map()
     blocked = [d for d in per_day if d.level == SafetyLevel.BLOCKED]
+    requires_verification = [
+        d for d in per_day if d.level == SafetyLevel.REQUIRES_VERIFICATION
+    ]
     caution = [d for d in per_day if d.level == SafetyLevel.CAUTION]
 
     menu_contains: list[str] = []
@@ -404,6 +433,14 @@ def _rollup(
             "Ganti paket/hari, atau minta alternatif menu dari tim dapur. "
             "Sistem tidak akan mengirim tiket dapur selama masih ada tabrakan kritis."
         )
+    elif requires_verification:
+        level = SafetyLevel.REQUIRES_VERIFICATION
+        headline = f"{len(requires_verification)} hari menunggu verifikasi recipe."
+        explanation = (
+            "Sistem menahan rekomendasi karena ingredient/BOM atau risiko "
+            "kontaminasi silang belum diverifikasi operator."
+        )
+        guidance = "Admin harus menyelesaikan verifikasi recipe sebelum menu dipesan."
     elif caution:
         level = SafetyLevel.CAUTION
         headline = f"{len(caution)} hari perlu perhatian lebih."
@@ -420,7 +457,7 @@ def _rollup(
 
     return SafetyReportOut(
         level=level,
-        is_recommended=not blocked,
+        is_recommended=not blocked and not requires_verification,
         headline=headline,
         explanation=explanation,
         guidance=guidance,
@@ -438,7 +475,7 @@ def build_report(
     selected_codes: list[str] | None = None,
     passport: PassportOut | None = None,
     schedule_days: list[str] | None = None,
-    selections: dict[str, str] | None = None,
+    selections: dict[str, str | list[str]] | None = None,
     kitchen_notes: str = "",
     customer_note: str = "",
     ctx: CatalogContext | None = None,
@@ -474,6 +511,8 @@ def safety_summary_text(report: SafetyReportOut) -> str:
     """Ringkasan satu paragraf untuk invoice & tiket dapur."""
     if report.level == SafetyLevel.BLOCKED:
         head = f"PERINGATAN: {len(report.conflicts)} tabrakan allergen belum terselesaikan."
+    elif report.level == SafetyLevel.REQUIRES_VERIFICATION:
+        head = "TAHAN: recipe/BOM menu belum diverifikasi operator."
     elif report.level == SafetyLevel.CAUTION:
         head = "Catatan: menu lolos dari alergen kritis, ada batasan ringan."
     else:

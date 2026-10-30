@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_current_customer, require_admin
 from app.core.domain import ACTIVE_STATUSES
+from app.core.errors import PermissionError_
 from app.core.logging import get_logger
 from app.repositories import customer_repo, order_repo
 from app.schemas.customer import (
     CustomerAdminOut,
     CustomerOut,
+    CustomerProfilePatch,
     PassportIn,
     PassportOut,
 )
@@ -27,6 +30,16 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 @router.get("/me", response_model=CustomerOut, summary="Profil saya")
 def me(customer: CustomerOut = Depends(get_current_customer)) -> CustomerOut:
     return customer
+
+
+@router.patch("/me", response_model=CustomerOut, summary="Perbarui profil saya")
+def update_me(
+    payload: CustomerProfilePatch,
+    customer: CustomerOut = Depends(get_current_customer),
+) -> CustomerOut:
+    return customer_repo.to_public(
+        customer_repo.update_fields(customer.customer_id, {"display_name": payload.display_name})
+    )
 
 
 @router.get("/me/passport", response_model=PassportOut, summary="Dietary Passport saya")
@@ -151,25 +164,15 @@ def get_recommendations(customer_id: str = "cust_ml_001") -> list[dict[str, Any]
 
 
 @router.get("/rfm", summary="Status Segmentasi RFM Pelanggan (ML)")
-def get_customer_rfm(customer_id: str = "cust_ml_001") -> dict[str, Any]:
-    """Status segmentasi RFM untuk personalisasi AI Chef & voucher promo."""
-    from app.services.analytics_ml_service import calculate_rfm_crm_segments
-    rfm = calculate_rfm_crm_segments()
-    for c in rfm.get("customers", []):
-        if c.get("customer_id") == customer_id:
-            return c
-    return {
-        "customer_id": customer_id,
-        "segment": "Champions",
-        "recency_days": 2,
-        "frequency": 14,
-        "monetary": 680000,
-        "r_score": 5,
-        "f_score": 5,
-        "m_score": 5,
-        "rfm_score": "555",
-        "recommended_action": "Beri perlakuan VIP, preview menu baru eksklusif, dan apresiasi loyalitas.",
-    }
+def get_customer_rfm(
+    customer_id: str | None = Query(default=None),
+    customer: CustomerOut = Depends(get_current_customer),
+) -> dict[str, Any]:
+    """RFM hanya untuk customer yang sedang login; tidak ada default Champions."""
+    if customer_id and customer_id != customer.customer_id:
+        raise PermissionError_("RFM hanya boleh dilihat oleh customer yang sedang login.")
+    from app.services.rfm_service import get_customer_rfm as get_live_customer_rfm
+    return get_live_customer_rfm(customer.customer_id)
 
 
 @router.get(
@@ -189,4 +192,4 @@ def detail(
         last_order_at=next((o["created_at"] for o in orders if o["created_at"]), None),
         passport=customer_repo.get_passport(customer_id),
     )
-
+

@@ -1,1 +1,1 @@
-"""Lapisan repository — semua akses Astra DB terpusat di sini."""
+"""Lapisan repository — akses database terpusat di repository Supabase."""

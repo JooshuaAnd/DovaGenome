@@ -7,7 +7,6 @@ import {
   Phone,
   ShieldCheck,
   Sparkles,
-  User,
   UtensilsCrossed,
   X,
 } from 'lucide-react'
@@ -23,31 +22,33 @@ import { ApiError } from '@/services/http'
 import { BRAND } from '@/lib/constants'
 
 type SubmitValues =
-  | { mode: 'customer'; displayName: string; phone: string }
+  | { mode: 'customer'; phone: string }
   | { mode: 'staff'; username: string; password: string }
 
 const CURRENT_YEAR = new Date().getFullYear()
 
 export function LoginPage() {
-  const { isAuthenticated, signInCustomer, login, error: authError, clearError } = useAuth()
+  const { isAuthenticated, role, signInCustomer, login, error: authError, clearError } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const next = searchParams.get('next')
 
   const [phone, setPhone] = useState('')
-  const [displayName, setDisplayName] = useState('')
 
   // Staff secret modal state
-  const [showStaffModal, setShowStaffModal] = useState(false)
+  const [showStaffModal, setShowStaffModal] = useState(
+    () => Boolean(next && (next.startsWith('/admin') || next.startsWith('/kitchen'))),
+  )
   const [staffRole, setStaffRole] = useState<'admin' | 'kitchen'>('admin')
   const [staffUsername, setStaffUsername] = useState('admin')
   const [staffPassword, setStaffPassword] = useState('')
 
-  const next = searchParams.get('next')
+  const defaultDestination =
+    role === 'admin' ? '/admin' : role === 'kitchen' ? '/kitchen' : role === 'supplier' ? '/supplier' : '/order'
 
   const submit = useAsync(async (values: SubmitValues) => {
     if (values.mode === 'customer') {
-      const name = values.displayName.trim() || `Pelanggan (${values.phone.slice(-4)})`
-      return signInCustomer({ display_name: name, phone: values.phone })
+      return signInCustomer({ phone: values.phone })
     }
     return login({ username: values.username, password: values.password || null })
   })
@@ -57,13 +58,12 @@ export function LoginPage() {
       if (next) {
         navigate(next, { replace: true })
       } else {
-        // Customer default to /order, staff default to /orders
-        navigate('/order', { replace: true })
+        navigate(defaultDestination, { replace: true })
       }
     }
-  }, [isAuthenticated, navigate, next])
+  }, [isAuthenticated, navigate, next, defaultDestination])
 
-  if (isAuthenticated) return <Navigate to={next || '/order'} replace />
+  if (isAuthenticated) return <Navigate to={next || defaultDestination} replace />
 
   async function handleCustomerSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -73,7 +73,6 @@ export function LoginPage() {
 
     await submit.run({
       mode: 'customer',
-      displayName: displayName.trim(),
       phone: cleanPhone,
     })
   }
@@ -109,7 +108,7 @@ export function LoginPage() {
           </div>
 
           <h1 className="mt-5 font-display text-4xl leading-[1.15] font-bold text-white xl:text-5xl">
-            Makan siang harian yang aman & tepat untuk tubuhmu.
+            Menu harian yang dipilih sesuai kebutuhanmu.
           </h1>
 
           <p className="mt-4 text-base leading-relaxed text-slate-300">
@@ -188,30 +187,6 @@ export function LoginPage() {
               </p>
             </div>
 
-            {/* Input Nama Lengkap (Opsional / Akun Baru) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="customer-name" className="text-xs font-semibold uppercase tracking-wider text-ink-soft">
-                  Nama Lengkap
-                </Label>
-                <span className="text-[0.6875rem] text-muted-text">Diperlukan untuk pesanan baru</span>
-              </div>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted-text">
-                  <User className="size-4 text-muted-text" />
-                </div>
-                <Input
-                  id="customer-name"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="contoh: Maya Indriani"
-                  autoComplete="name"
-                  className="h-12 rounded-xl pl-10 text-base shadow-sm border-line hover:border-forest-600 focus:border-forest-700 focus:ring-forest-700/20"
-                />
-              </div>
-            </div>
-
             {activeError && !showStaffModal && (
               <FormError message={activeError.message} fields={fieldErrors} />
             )}
@@ -231,7 +206,7 @@ export function LoginPage() {
             <p className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
               <span>
-                Belum pernah mendaftar? Cukup isi nomor telepon dan nama Anda di atas, akun langsung dibuat seketika.
+                Nomor telepon menjadi ID pelanggan. Nama bisa ditambahkan nanti dari profil.
               </span>
             </p>
           </div>

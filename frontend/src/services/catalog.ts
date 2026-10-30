@@ -1,4 +1,4 @@
-import { http } from './http'
+import { ApiError, http } from './http'
 import type {
   Allergen,
   AllergenPatch,
@@ -51,8 +51,15 @@ export const catalogService = {
     return http.get<Allergen[]>('/catalog/allergens', { signal })
   },
 
-  listMenus(signal?: AbortSignal) {
-    return http.get<Menu[]>('/catalog/menus', { signal })
+  async listMenus(signal?: AbortSignal) {
+    try {
+      return await http.get<Menu[]>('/catalog/menus', { signal })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        return http.get<Menu[]>('/catalog/menus', { signal, auth: false })
+      }
+      throw error
+    }
   },
 
   /**
@@ -62,15 +69,24 @@ export const catalogService = {
    * Public — no token required — but a signed-in customer's passport is applied
    * automatically, so the cards read "aman"/"mengandung X" out of the box.
    */
-  getServiceWeek(query: ServiceWeekQuery = {}, signal?: AbortSignal) {
-    return http.get<ServiceWeek>('/catalog/menus/week', {
+  async getServiceWeek(query: ServiceWeekQuery = {}, signal?: AbortSignal) {
+    const options = {
       query: {
         package_code: query.package_code || undefined,
         days: query.days,
         selected_allergen_codes: query.selected_allergen_codes,
       },
       signal,
-    })
+    }
+
+    try {
+      return await http.get<ServiceWeek>('/catalog/menus/week', options)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        return http.get<ServiceWeek>('/catalog/menus/week', { ...options, auth: false })
+      }
+      throw error
+    }
   },
 
   /** Public, unauthenticated safety preview. */

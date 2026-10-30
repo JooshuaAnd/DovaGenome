@@ -197,6 +197,7 @@ export interface RequestOptions {
   body?: unknown
   query?: QueryParams
   signal?: AbortSignal
+  headers?: Record<string, string>
   /** Set false for public endpoints that must not send a stale token. */
   auth?: boolean
 }
@@ -216,10 +217,11 @@ const networkError = (cause: unknown) =>
  *   that callers may want to filter by `error.code === 'aborted'`.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, signal, auth = true } = options
+  const { method = 'GET', body, query, signal, auth = true, headers: extraHeaders } = options
 
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const headers: Record<string, string> = { Accept: 'application/json', ...(extraHeaders ?? {}) }
+  const isMultipart = typeof FormData !== 'undefined' && body instanceof FormData
+  if (body !== undefined && !isMultipart) headers['Content-Type'] = 'application/json'
 
   if (auth) {
     const token = readToken()
@@ -231,7 +233,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     response = await fetch(buildUrl(path, query), {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isMultipart ? body : JSON.stringify(body),
       signal,
     })
   } catch (cause) {

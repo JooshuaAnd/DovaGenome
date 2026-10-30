@@ -9,6 +9,8 @@ class Role(StrEnum):
     CUSTOMER = "customer"
     KITCHEN = "kitchen"
     ADMIN = "admin"
+    SUPPLIER = "supplier"
+    COURIER = "courier"
 
 
 class OrderStatus(StrEnum):
@@ -39,6 +41,7 @@ class SafetyLevel(StrEnum):
     SAFE = "safe"            # tidak ada tabrakan
     CAUTION = "caution"      # ada batasan ringan atau preferensi, bukan allergen kritis
     BLOCKED = "blocked"      # ada allergen kritis yang dikecualikan passport
+    REQUIRES_VERIFICATION = "requires_verification"  # recipe/BOM belum terverifikasi
 
 
 class MenuStatus(StrEnum):

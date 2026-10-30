@@ -15,12 +15,13 @@ import {
   RefreshCw,
   Search,
   Send,
-  Store,
-  TrendingUp,
   Truck,
   Utensils,
   BarChart3,
   FileSpreadsheet,
+  Bot,
+  CircleCheck,
+  CircleX,
   Users,
   X,
 } from 'lucide-react'
@@ -32,83 +33,104 @@ import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 import { adminService } from '@/services/admin'
+import { ApiError, getErrorMessage } from '@/services/http'
+import type { AdminDashboard, AdminSystem } from '@/types'
 import { AdminAnalyticsView } from './AdminAnalyticsView'
 
 /* ── Fallback Seed Data jika koneksi lambat ────────────────────────────────── */
-const DEFAULT_POPULAR_DISHES = [
-  { rank: '01', name: 'Ayam Panggang Rosemary & Ubi Madu', orders: 23, image: 'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=150&q=80' },
-  { rank: '02', name: 'Beef Bulgogi Wijen & Nasi Beras Cokelat', orders: 18, image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=150&q=80' },
-  { rank: '03', name: 'Salmon Fillet Lemon Herb & Kentang Kukus', orders: 15, image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=150&q=80' },
-  { rank: '04', name: 'Sup Daging Sapi Jamur Rempah', orders: 12, image: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=150&q=80' },
-]
-
 export function AdminDashboardPage() {
   const { customer, logout } = useAuth()
   const navigate = useNavigate()
 
   // State operasional KDS & POS
   const [loading, setLoading] = useState(true)
+  const [dataWarning, setDataWarning] = useState<string | null>(null)
   const [searchOrder, setSearchOrder] = useState('')
   const [searchPayment, setSearchPayment] = useState('')
   const [activeTab, setActiveTab] = useState<'dashboard' | 'analytics' | 'marketing' | 'suppliers' | 'inventory'>('dashboard')
   const [analyticsSubTab, setAnalyticsSubTab] = useState<'stats' | 'crm' | 'supply_chain' | 'demand_ai'>('demand_ai')
 
   // Data dari Supabase
-  const [metrics, setMetrics] = useState({ new_orders: 16, total_orders: 86, waiting_list: 9 })
+  const [metrics, setMetrics] = useState({ new_orders: 0, total_orders: 0, waiting_list: 0 })
   const [orders, setOrders] = useState<any[]>([])
-  const [popularDishes, setPopularDishes] = useState<any[]>(DEFAULT_POPULAR_DISHES)
+  const [kitchenOrders, setKitchenOrders] = useState<any[]>([])
+  const [popularDishes, setPopularDishes] = useState<any[]>([])
   const [inventoryAlerts, setInventoryAlerts] = useState<any[]>([])
   const [notifications, setNotifications] = useState<any[]>([])
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([])
+  const [supplierInvoices, setSupplierInvoices] = useState<any[]>([])
+  const [supplierInvoiceWarning, setSupplierInvoiceWarning] = useState<string | null>(null)
+  const [adminOverview, setAdminOverview] = useState<AdminDashboard | null>(null)
+  const [systemStatus, setSystemStatus] = useState<AdminSystem | null>(null)
 
   // Modal State
   const [selectedOrderForPay, setSelectedOrderForPay] = useState<any | null>(null)
-  const [showWaModal, setShowWaModal] = useState(false)
-  const [waRecipient, setWaRecipient] = useState({ type: 'customer', name: '', phone: '', message: '' })
-  const [isSendingWa, setIsSendingWa] = useState(false)
-  const [showUploadMenuModal, setShowUploadMenuModal] = useState(false)
-  const [menuForm, setMenuForm] = useState({
-    hari: 'Senin',
-    tanggal: '2026-10-12',
-    nama_menu: '',
-    harga: 48000,
-    bom_ingredients: '',
-    allergens: [] as string[],
-    deskripsi: '',
-  })
+  const [showTelegramModal, setShowTelegramModal] = useState(false)
+  const [telegramRecipient, setTelegramRecipient] = useState({ type: 'customer', name: '', chatId: '', message: '' })
+  const [isSendingTelegram, setIsSendingTelegram] = useState(false)
+  
 
   // Fetch data
   const refreshData = async () => {
     setLoading(true)
+    setDataWarning(null)
     try {
-      const [posRes, popRes, invRes, notifRes, supRes] = await Promise.all([
-        adminService.getPosKds().catch(() => null),
-        adminService.getPopularDishes().catch(() => null),
-        adminService.getInventoryAlerts().catch(() => null),
-        adminService.getNotifications().catch(() => null),
-        adminService.getSuppliers().catch(() => null),
-      ])
+      const failures: string[] = []
+      const safe = async <T,>(label: string, request: Promise<T>, timeoutMs = 10000): Promise<T | null> => {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined
+        try {
+          return await Promise.race([
+            request,
+            new Promise<T>((_, reject) => {
+              timeoutId = setTimeout(() => reject(new Error(`${label} timeout setelah ${Math.round(timeoutMs / 1000)} detik`)), timeoutMs)
+            }),
+          ])
+        } catch (error) {
+          const detail = error instanceof ApiError ? `HTTP ${error.status}: ${error.message}` : getErrorMessage(error)
+          if (label === 'Invoice supplier') {
+            setSupplierInvoiceWarning(`Invoice supplier belum tersedia: ${detail}. Modul billing memerlukan migration Supabase yang sesuai.`)
+          } else {
+            failures.push(`${label} — ${detail}`)
+          }
+          return null
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId)
+        }
+      }
 
-      if (posRes) {
-        setMetrics(posRes.metrics || { new_orders: 16, total_orders: 86, waiting_list: 9 })
-        setOrders(posRes.orders || [])
-      }
-      if (popRes && popRes.length > 0) {
-        setPopularDishes(
-          popRes.map((p, idx) => ({
-            rank: String(idx + 1).padStart(2, '0'),
-            name: p.nama_menu,
-            orders: Number(p.order_count) || 12,
-            image: DEFAULT_POPULAR_DISHES[idx % 4]?.image,
-          }))
-        )
-      }
-      if (invRes) setInventoryAlerts(invRes)
-      if (notifRes) setNotifications(notifRes)
-      if (supRes) {
-        setSuppliers(supRes.suppliers || [])
-        setPurchaseOrders(supRes.purchase_orders || [])
+      // Data dashboard utama dimuat sebelum widget sekunder.
+      const overviewRes = await safe('Ringkasan dashboard', adminService.dashboard(), 30000)
+
+      setAdminOverview(overviewRes)
+      setLoading(false)
+
+      const posRes = await safe('POS/KDS', adminService.getPosKds())
+      const popRes = await safe('Menu terlaris', adminService.getPopularDishes())
+      const invRes = await safe('Inventory', adminService.getInventoryAlerts())
+      const notifRes = await safe('Telegram outbox', adminService.getNotifications())
+      const supRes = await safe('Supplier/PO', adminService.getSuppliers())
+      const invoiceRes = await safe('Invoice supplier', adminService.getSupplierInvoices())
+      if (invoiceRes) setSupplierInvoiceWarning(null)
+
+      setMetrics(posRes?.metrics || { new_orders: 0, total_orders: 0, waiting_list: 0 })
+      setOrders(posRes?.orders || [])
+      setKitchenOrders(posRes?.kitchen_orders || [])
+      setPopularDishes(popRes?.map((p, idx) => ({
+        rank: String(idx + 1).padStart(2, '0'),
+        name: p.nama_menu,
+        orders: Number(p.order_count),
+      })) || [])
+      setInventoryAlerts(invRes || [])
+      setNotifications(notifRes || [])
+      setSuppliers(supRes?.suppliers || [])
+      setPurchaseOrders(supRes?.purchase_orders || [])
+      setSupplierInvoices(invoiceRes || [])
+      const systemRes = await safe('Status sistem', adminService.system(), 30000)
+      setSystemStatus(systemRes)
+      const dashboardFailures = failures.filter((failure) => !failure.startsWith('Invoice supplier'))
+      if (dashboardFailures.length > 0) {
+        setDataWarning(`Sebagian data gagal dimuat: ${dashboardFailures.join(' • ')}`)
       }
     } catch {
       toast.error('Gagal menyinkronkan data dengan Supabase.')
@@ -132,8 +154,8 @@ export function AdminDashboardPage() {
       await adminService.advanceOrder(orderId, nextStatus)
       toast.success(`Pesanan ${orderId} diperbarui ke status: ${nextStatus}!`)
       refreshData()
-    } catch {
-      toast.error('Gagal memperbarui status tiket dapur.')
+    } catch (error) {
+      toast.error('Status tiket dapur tidak berubah.', { description: getErrorMessage(error) })
     }
   }
 
@@ -144,44 +166,97 @@ export function AdminDashboardPage() {
       toast.success(`Pembayaran untuk order ${orderId} berhasil diverifikasi LUNAS!`)
       setSelectedOrderForPay(null)
       refreshData()
-    } catch {
-      toast.error('Gagal mencatat pembayaran.')
+    } catch (error) {
+      toast.error('Pembayaran tidak tercatat.', { description: getErrorMessage(error) })
     }
   }
 
-  // Kirim WhatsApp Otomatis
-  const handleSendAutomatedWa = async () => {
-    if (!waRecipient.phone || !waRecipient.message) {
-      toast.error('Mohon isi nomor telepon dan pesan!')
+  // Queue pesan Telegram admin; kanal manual admin sengaja dibatasi ke Telegram.
+  const handleSendTelegram = async () => {
+    if (!telegramRecipient.chatId || !telegramRecipient.message) {
+      toast.error('Mohon isi Telegram chat ID dan pesan!')
       return
     }
-    setIsSendingWa(true)
+    setIsSendingTelegram(true)
     try {
       await adminService.sendNotification({
-        recipient_type: waRecipient.type,
-        recipient_name: waRecipient.name || 'Pelanggan',
-        recipient_phone: waRecipient.phone,
-        channel: 'whatsapp',
-        message: waRecipient.message,
+        recipient_type: telegramRecipient.type,
+        recipient_name: telegramRecipient.name || 'Pelanggan',
+        recipient_chat_id: telegramRecipient.chatId,
+        message: telegramRecipient.message,
       })
-      toast.success(`Pesan WhatsApp otomatis terkirim ke ${waRecipient.name} (${waRecipient.phone})!`)
-      setShowWaModal(false)
+      toast.success(`Pesan Telegram masuk outbox untuk ${telegramRecipient.name || 'penerima'}.`)
+      setShowTelegramModal(false)
       refreshData()
-    } catch {
-      toast.error('Gagal mengirim WhatsApp outbox.')
+    } catch (error) {
+      toast.error('Pesan Telegram tidak masuk outbox.', { description: getErrorMessage(error) })
     } finally {
-      setIsSendingWa(false)
+      setIsSendingTelegram(false)
+    }
+  }
+
+  const handleCreateProcurementDraft = async () => {
+    try {
+      await adminService.createProcurementDraft(`admin-${Date.now()}`)
+      toast.success('Draft PO berhasil dibuat dari sourcing live dan menunggu approval admin.')
+      refreshData()
+    } catch (error) {
+      toast.error('Draft PO belum dapat dibuat.', { description: getErrorMessage(error) })
+    }
+  }
+
+  const handleApproveProcurementDraft = async (poId: string) => {
+    try {
+      await adminService.approveProcurementDraft(poId)
+      toast.success(`PO ${poId} disetujui. Silakan queue untuk delivery.`)
+      refreshData()
+    } catch (error) {
+      toast.error(`PO ${poId} belum dapat disetujui.`, { description: getErrorMessage(error) })
+    }
+  }
+
+  const handleQueueProcurementDelivery = async (poId: string) => {
+    try {
+      await adminService.queueProcurementDelivery(poId)
+      toast.success(`PO ${poId} masuk outbox delivery dengan status PENDING.`)
+      refreshData()
+    } catch (error) {
+      toast.error(`PO ${poId} belum dapat di-queue.`, { description: getErrorMessage(error) })
+    }
+  }
+
+  const handleVerifySupplierInvoice = async (invoiceId: string, decision: 'APPROVE' | 'REJECT') => {
+    try {
+      await adminService.verifySupplierInvoice(
+        invoiceId,
+        decision,
+        decision === 'APPROVE' ? 'Diverifikasi admin melalui dashboard setelah review PO-GR-Invoice.' : 'Ditolak admin; supplier perlu mengajukan koreksi.',
+      )
+      toast.success(`Invoice supplier ${decision === 'APPROVE' ? 'disetujui' : 'ditolak'}.`)
+      refreshData()
+    } catch (error) {
+      toast.error('Invoice supplier belum dapat diverifikasi.', { description: getErrorMessage(error) })
+    }
+  }
+
+  const handlePaySupplierInvoice = async (invoice: any) => {
+    try {
+      await adminService.paySupplierInvoice(invoice.supplier_invoice_id, Number(invoice.amount))
+      toast.success(`Pembayaran manual invoice ${invoice.invoice_number} tercatat.`)
+      refreshData()
+    } catch (error) {
+      toast.error('Pembayaran invoice belum dapat dicatat.', { description: getErrorMessage(error) })
     }
   }
 
   // Filter Order List (KDS)
   const filteredOrders = useMemo(() => {
-    return orders.filter(
+    return kitchenOrders.filter(
       (o) =>
         o.order_id?.toLowerCase().includes(searchOrder.toLowerCase()) ||
         o.customer_name?.toLowerCase().includes(searchOrder.toLowerCase())
     )
-  }, [orders, searchOrder])
+  }, [kitchenOrders, searchOrder])
 
   // Filter Payment List
   const paymentOrders = useMemo(() => {
@@ -223,7 +298,7 @@ export function AdminDashboardPage() {
           {/* Logo brand */}
           <div className="p-6 pb-5 flex items-center justify-between border-b border-stone-100">
             <Link to="/" className="flex items-center gap-3">
-              <div className="size-10 rounded-2xl bg-amber-400 flex items-center justify-center text-stone-950 font-black shadow-md shadow-amber-400/20 text-lg">
+              <div className="size-10 rounded-2xl bg-amber-400 flex items-center justify-center text-stone-950 font-black shadow-md shadow-red-900/20 text-lg">
                 DK
               </div>
               <div>
@@ -244,7 +319,7 @@ export function AdminDashboardPage() {
               className={cn(
                 'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
                 activeTab === 'dashboard'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm shadow-amber-400/20'
+                  ? 'bg-red-800 text-white font-bold shadow-sm shadow-red-900/20'
                   : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
               )}
             >
@@ -253,24 +328,10 @@ export function AdminDashboardPage() {
             </button>
 
             {/* Direct ML & Analytics Sections */}
-            <button
-              onClick={() => {
-                setActiveTab('analytics')
-                setAnalyticsSubTab('demand_ai')
-              }}
-              className={cn(
-                'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
-                activeTab === 'analytics' && analyticsSubTab === 'demand_ai'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm shadow-amber-400/20'
-                  : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
-              )}
-            >
-              <TrendingUp className="size-5 text-amber-600" />
-              <span>Prediksi Demand AI</span>
-              <span className="ml-auto text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                1K Data
-              </span>
-            </button>
+            <Link to="/admin/menu-demand" className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left text-stone-600 hover:bg-stone-100 hover:text-stone-900">
+              <Calendar className="size-5 text-red-700" />
+              <span>Menu & rekomendasi harian</span>
+            </Link>
 
             <button
               onClick={() => {
@@ -280,7 +341,7 @@ export function AdminDashboardPage() {
               className={cn(
                 'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
                 activeTab === 'analytics' && analyticsSubTab === 'supply_chain'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm shadow-amber-400/20'
+                  ? 'bg-red-800 text-white font-bold shadow-sm shadow-red-900/20'
                   : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
               )}
             >
@@ -296,7 +357,7 @@ export function AdminDashboardPage() {
               className={cn(
                 'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
                 activeTab === 'analytics' && analyticsSubTab === 'crm'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm shadow-amber-400/20'
+                  ? 'bg-red-800 text-white font-bold shadow-sm shadow-red-900/20'
                   : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
               )}
             >
@@ -312,7 +373,7 @@ export function AdminDashboardPage() {
               className={cn(
                 'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
                 activeTab === 'analytics' && analyticsSubTab === 'stats'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm shadow-amber-400/20'
+                  ? 'bg-red-800 text-white font-bold shadow-sm shadow-red-900/20'
                   : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
               )}
             >
@@ -327,7 +388,7 @@ export function AdminDashboardPage() {
               className={cn(
                 'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
                 activeTab === 'inventory'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm'
+                  ? 'bg-red-800 text-white font-bold shadow-sm'
                   : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
               )}
             >
@@ -343,7 +404,7 @@ export function AdminDashboardPage() {
               className={cn(
                 'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
                 activeTab === 'suppliers'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm'
+                  ? 'bg-red-800 text-white font-bold shadow-sm'
                   : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
               )}
             >
@@ -356,21 +417,19 @@ export function AdminDashboardPage() {
               className={cn(
                 'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
                 activeTab === 'marketing'
-                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm'
+                  ? 'bg-red-800 text-white font-bold shadow-sm'
                   : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
               )}
             >
               <MessageSquare className="size-5" />
-              <span>WA Otomatis & CRM</span>
+              <span>Telegram Ops & CRM</span>
             </button>
-
-            <Link
-              to="/supplier"
-              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-all text-left"
-            >
-              <Store className="size-5" />
-              <span>Portal Supplier →</span>
-            </Link>
+            <div className="my-3 border-t border-stone-100" />
+            <Link to="/admin/daily-menu" className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-all text-left"><Utensils className="size-5" /><span>Menu Mingguan</span></Link>
+            <Link to="/admin/customers" className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-all text-left"><Users className="size-5" /><span>Pelanggan</span></Link>
+            <Link to="/admin/production" className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-all text-left"><Layers className="size-5" /><span>Batch Produksi</span></Link>
+            <Link to="/admin/delivery" className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-all text-left"><Truck className="size-5" /><span>Pengiriman & Rute</span></Link>
+            <Link to="/admin/campaigns" className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-all text-left"><MessageSquare className="size-5" /><span>Kampanye CRM</span></Link>
           </nav>
         </div>
 
@@ -402,9 +461,7 @@ export function AdminDashboardPage() {
         {/* ── Top Bar (Greeting & Date) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-stone-900 tracking-tight flex items-center gap-2">
-              Nice! We have a lot of orders <span className="text-2xl">😊</span>
-            </h1>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-stone-900 tracking-tight">Operasional Dova Kitchen</h1>
             <p className="text-xs text-stone-500 font-medium mt-1">{currentDateString}</p>
           </div>
 
@@ -421,8 +478,8 @@ export function AdminDashboardPage() {
             </Button>
 
             <Button
-              onClick={() => setShowUploadMenuModal(true)}
-              className="rounded-full bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold text-xs px-5 py-2.5 shadow-md shadow-amber-400/20 gap-1.5"
+              onClick={() => navigate('/admin/daily-menu')}
+              className="rounded-full bg-amber-400 hover:bg-red-900 text-stone-950 font-extrabold text-xs px-5 py-2.5 shadow-md shadow-red-900/20 gap-1.5"
             >
               <Plus className="size-4" />
               UNGGAH MENU HARIAN
@@ -431,12 +488,20 @@ export function AdminDashboardPage() {
         </div>
 
         {/* ── CONDITIONAL VIEW SWITCHER ─────────────────────────────── */}
+        {dataWarning && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-900">
+            <p className="font-extrabold">Data dashboard belum lengkap</p>
+            <p className="mt-1 break-words">{dataWarning}</p>
+            <p className="mt-1 text-rose-700">Pastikan login memakai role admin dan backend berjalan di http://localhost:8000.</p>
+          </div>
+        )}
+
         {activeTab === 'analytics' && (
           <AdminAnalyticsView
             initialSubTab={analyticsSubTab}
-            onOpenWa={(recipient) => {
-              setWaRecipient(recipient)
-              setShowWaModal(true)
+            onOpenTelegram={(recipient) => {
+              setTelegramRecipient(recipient)
+              setShowTelegramModal(true)
             }}
           />
         )}
@@ -445,13 +510,13 @@ export function AdminDashboardPage() {
           <>
             {/* ── Top 3 Metric Cards (Image 1 Bitepoint exact layout) ── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Card 1: New Orders (Deep Forest Green with Bell) */}
+              {/* Card 1: live active queue */}
               <div className="rounded-3xl bg-[#0D4738] text-white p-5 shadow-lg shadow-emerald-950/10 flex items-center justify-between">
                 <div className="space-y-1">
-                  <p className="text-xs font-semibold text-emerald-200">New Orders</p>
-                  <h2 className="text-3xl md:text-4xl font-black">{metrics.new_orders}</h2>
+                  <p className="text-xs font-semibold text-emerald-200">Pesanan Aktif</p>
+                  <h2 className="text-3xl md:text-4xl font-black">{adminOverview?.active_orders ?? metrics.new_orders}</h2>
                   <p className="text-[11px] text-emerald-300 font-normal">
-                    * Updated every new order
+                    Pending + diproses + siap
                   </p>
                 </div>
                 <div className="size-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white">
@@ -459,16 +524,15 @@ export function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* Card 2: Total Orders */}
+              {/* Card 2: completed today */}
               <div className="rounded-3xl bg-white border border-stone-200/90 p-5 shadow-2xs flex items-center justify-between">
                 <div className="space-y-1">
-                  <p className="text-xs font-semibold text-stone-500">Total Orders</p>
+                  <p className="text-xs font-semibold text-stone-500">Selesai Hari Ini</p>
                   <h2 className="text-3xl md:text-4xl font-black text-stone-900">
-                    {metrics.total_orders}
+                    {adminOverview?.completed_today ?? metrics.total_orders}
                   </h2>
-                  <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                    <TrendingUp className="size-3" />
-                    +2.5% than usual
+                  <p className="text-[11px] text-stone-500 font-semibold flex items-center gap-1">
+                    Dibatalkan: {adminOverview?.cancelled_today ?? 0}
                   </p>
                 </div>
                 <div className="size-12 rounded-2xl bg-stone-100 flex items-center justify-center text-stone-600">
@@ -476,16 +540,15 @@ export function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* Card 3: Waiting List */}
+              {/* Card 3: live kitchen latency */}
               <div className="rounded-3xl bg-white border border-stone-200/90 p-5 shadow-2xs flex items-center justify-between">
                 <div className="space-y-1">
-                  <p className="text-xs font-semibold text-stone-500">Waiting List</p>
+                  <p className="text-xs font-semibold text-stone-500">Rata-rata Tunggu</p>
                   <h2 className="text-3xl md:text-4xl font-black text-stone-900">
-                    {metrics.waiting_list}
+                    {adminOverview?.average_wait_minutes ?? metrics.waiting_list} <span className="text-base font-bold">mnt</span>
                   </h2>
                   <p className="text-[11px] text-amber-600 font-semibold flex items-center gap-1">
-                    <TrendingUp className="size-3" />
-                    +3.2% than usual
+                    Tiket tertua: {adminOverview?.oldest_ticket_minutes ?? 0} mnt
                   </p>
                 </div>
                 <div className="size-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600">
@@ -506,11 +569,11 @@ export function AdminDashboardPage() {
                       Trending Order Alert
                     </span>
                     <Badge className="bg-white/20 text-white text-[10px] px-2 py-0 border-none">
-                      Kapasitas +24%
+                      {adminOverview?.pending_orders ?? 0} menunggu
                     </Badge>
                   </div>
                   <p className="text-xs text-white/95 mt-0.5 leading-relaxed max-w-2xl">
-                    Terjadi lonjakan pemesanan pesat pada menu <strong>Salmon Fillet Lemon Herb</strong> & <strong>Beef Bulgogi</strong>! Stok Salmon di gudang menipis (Tersisa 4.5 kg). PO otomatis telah disiapkan untuk supplier.
+                    Panel ini memakai ringkasan live. Forecast, BOM, dan PO tetap memiliki gate masing-masing; tidak ada angka kapasitas contoh yang ditampilkan sebagai fakta.
                   </p>
                 </div>
               </div>
@@ -518,38 +581,100 @@ export function AdminDashboardPage() {
               <div className="flex items-center gap-2 shrink-0">
                 <Button
                   size="sm"
-                  onClick={() => {
-                    setWaRecipient({
-                      type: 'supplier',
-                      name: 'Muara Baru Seafood',
-                      phone: '+6281900112233',
-                      message: 'Halo Pak Johan (Muara Baru Seafood), mohon kirim tambahan 10 kg Salmon Fillet segar untuk pesanan katering Dova Kitchen besok pagi. Terima kasih!',
-                    })
-                    setShowWaModal(true)
-                  }}
+                  onClick={() => setActiveTab('suppliers')}
                   className="rounded-full bg-white text-stone-900 hover:bg-stone-100 font-bold text-xs shadow-sm"
                 >
                   <Truck className="size-3.5 mr-1 text-rose-600" />
-                  Pesan Tambahan ke Supplier
+                  Buka workflow Supplier/PO
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    setWaRecipient({
+                    setTelegramRecipient({
                       type: 'customer',
-                      name: 'Pelanggan Setia Dova',
-                      phone: '+6281234567890',
-                      message: 'Halo! Dova Kitchen sedang menyediakan promo istimewa untuk Salmon Fillet & Beef Bulgogi minggu ini. Cek menumu di aplikasi sekarang!',
+                      name: '',
+                      chatId: '',
+                      message: '',
                     })
-                    setShowWaModal(true)
+                    setShowTelegramModal(true)
                   }}
                   className="rounded-full border-white/40 bg-white/10 hover:bg-white/20 text-white font-bold text-xs"
                 >
                   <Send className="size-3.5 mr-1" />
-                  Chat Promo Pelanggan
+                  Kirim via Telegram
                 </Button>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+              <section className="rounded-3xl bg-slate-950 p-5 text-white shadow-lg shadow-slate-950/10">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-indigo-300 font-bold">Koneksi AI & kanal</p>
+                    <h3 className="mt-1 text-lg font-extrabold">Chatbot terhubung di mana?</h3>
+                  </div>
+                  <Bot className="size-6 text-indigo-300" />
+                </div>
+                <div className="space-y-3 text-xs">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-bold">Web Chatbot Chef BOB</span>
+                      <span className="flex items-center gap-1.5 text-[10px] font-bold">
+                        {systemStatus?.langflow_configured ? <CircleCheck className="size-4 text-emerald-300" /> : <CircleX className="size-4 text-rose-300" />}
+                        {systemStatus ? (systemStatus.langflow_configured ? 'Flow ID terpasang' : 'Belum dikonfigurasi') : 'Memuat...'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-white/65">React → <code className="text-indigo-200">POST /api/ai/consult</code> → Langflow. API key hanya berada di backend.</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-bold">Telegram Bot</span>
+                      <Badge className="border-none bg-sky-400/15 text-sky-200 text-[10px]">{systemStatus?.telegram_bot_username ? `@${systemStatus.telegram_bot_username.replace(/^@/, '')}` : 'Belum dikonfigurasi'}</Badge>
+                    </div>
+                    <p className="mt-1 text-white/65">`telegram_bot.py` memakai endpoint AI yang sama. Approval PO admin memakai route Telegram internal terpisah.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-3xl bg-white p-5 border border-stone-200/90 shadow-2xs">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-amber-600 font-bold">Live operations snapshot</p>
+                    <h3 className="mt-1 text-lg font-extrabold text-stone-900">Yang perlu ditindak hari ini</h3>
+                  </div>
+                  <Badge className={cn(
+                    'border-none text-[10px]',
+                    systemStatus?.demo_mode
+                      ? 'bg-amber-100 text-amber-800'
+                      : systemStatus?.supabase_connected
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-rose-100 text-rose-800'
+                  )}>
+                    {systemStatus
+                      ? systemStatus.demo_mode
+                        ? 'Demo mode'
+                        : systemStatus.supabase_connected
+                        ? 'Supabase live'
+                        : 'Database offline'
+                      : 'Memuat status DB'}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  {[
+                    ['Menunggu', adminOverview?.pending_orders ?? '-'],
+                    ['Dimasak', adminOverview?.preparing_orders ?? '-'],
+                    ['Siap', adminOverview?.packed_orders ?? '-'],
+                    ['Safety alert', adminOverview?.safety_alerts ?? '-'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-2xl bg-stone-50 border border-stone-100 p-3">
+                      <span className="block text-stone-500">{label}</span>
+                      <strong className="mt-1 block text-xl text-stone-900">{value}</strong>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 text-[11px] text-stone-500">Pelanggan: <strong>{adminOverview?.total_customers ?? '-'}</strong> · Tertaut Telegram: <strong>{adminOverview?.verified_customers ?? '-'}</strong> · Diperbarui: {adminOverview?.generated_at ? formatOrderDate(adminOverview.generated_at) : 'memuat'}</p>
+              </section>
             </div>
 
             {/* ── Main 3 Columns: [Order List KDS] | [Payment] | [Popular Dishes & Out of Stock] ── */}
@@ -686,7 +811,7 @@ export function AdminDashboardPage() {
                 <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
                   {paymentOrders.map((order, idx) => {
                     const code = `C${idx + 1}`
-                    const isPaid = order.payment_status === 'paid'
+                    const isPaid = String(order.payment_status || '').toUpperCase() === 'PAID'
 
                     return (
                       <div
@@ -721,7 +846,7 @@ export function AdminDashboardPage() {
                             <Button
                               size="sm"
                               onClick={() => setSelectedOrderForPay(order)}
-                              className="rounded-xl bg-amber-400 hover:bg-amber-500 text-stone-950 font-bold text-xs px-3.5 py-1.5 h-auto shadow-2xs"
+                              className="rounded-xl bg-amber-400 hover:bg-red-900 text-stone-950 font-bold text-xs px-3.5 py-1.5 h-auto shadow-2xs"
                             >
                               Pay Now →
                             </Button>
@@ -740,7 +865,7 @@ export function AdminDashboardPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="font-extrabold text-base text-stone-900">Popular Dishes</h3>
                     <button
-                      onClick={() => navigate('/menu')}
+                      onClick={() => navigate('/admin/daily-menu')}
                       className="text-xs font-bold text-amber-600 hover:underline"
                     >
                       View All
@@ -748,14 +873,12 @@ export function AdminDashboardPage() {
                   </div>
 
                   <div className="space-y-3">
-                    {popularDishes.map((dish, idx) => (
+                    {popularDishes.length === 0 ? <p className="rounded-xl bg-stone-50 p-4 text-xs text-stone-500">Belum ada agregasi menu terlaris dari data order.</p> : popularDishes.map((dish, idx) => (
                       <div key={idx} className="flex items-center gap-3">
                         <span className="text-xs font-black text-stone-400 w-5">{dish.rank}</span>
-                        <img
-                          src={dish.image}
-                          alt={dish.name}
-                          className="size-11 rounded-2xl object-cover border border-stone-100 shrink-0"
-                        />
+                        <div aria-hidden="true" className="size-11 rounded-2xl bg-rose-50 border border-rose-100 text-rose-800 flex items-center justify-center shrink-0">
+                          <Utensils className="size-5" />
+                        </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-bold text-stone-900 truncate">{dish.name}</p>
                           <p className="text-[11px] text-stone-500">Orders : {dish.orders}</p>
@@ -814,17 +937,20 @@ export function AdminDashboardPage() {
                   </div>
                 </div>
 
-                {/* Quick Action: WA Outbox Log */}
+                {/* Quick Action: Telegram Outbox Log */}
                 <div className="bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="font-extrabold text-base text-stone-900 flex items-center gap-1.5">
                       <MessageSquare className="size-4 text-emerald-600" />
-                      WA Outbox Log
+                      Telegram Outbox Log
                     </h3>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => setShowWaModal(true)}
+                      onClick={() => {
+                        setTelegramRecipient({ type: 'customer', name: '', chatId: '', message: '' })
+                        setShowTelegramModal(true)
+                      }}
                       className="rounded-full text-[11px] h-7 font-bold border-stone-200"
                     >
                       + Tulis Pesan
@@ -838,7 +964,7 @@ export function AdminDashboardPage() {
                         className="p-2.5 rounded-xl bg-stone-50 border border-stone-100 space-y-1"
                       >
                         <div className="flex items-center justify-between text-[11px] font-bold">
-                          <span className="text-stone-800 truncate">{n.recipient_name} ({n.recipient_phone})</span>
+                          <span className="text-stone-800 truncate">{n.recipient_name} ({n.recipient_chat_id || 'chat ID belum ada'})</span>
                           <span className="text-emerald-700 bg-emerald-100/60 px-1.5 py-0.2 rounded font-semibold text-[10px]">
                             {n.status}
                           </span>
@@ -866,7 +992,7 @@ export function AdminDashboardPage() {
               <Button
                 size="sm"
                 onClick={() => setActiveTab('analytics')}
-                className="rounded-full bg-amber-400 hover:bg-amber-500 text-stone-950 font-bold text-xs"
+                className="rounded-full bg-amber-400 hover:bg-red-900 text-stone-950 font-bold text-xs"
               >
                 Cek Perhitungan ROP Machine Learning →
               </Button>
@@ -911,18 +1037,10 @@ export function AdminDashboardPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            setWaRecipient({
-                              type: 'supplier',
-                              name: 'Supplier Pangan',
-                              phone: '+6285866408193',
-                              message: `Halo Supplier! Stok ${item.ingredient_name} di Dova Kitchen saat ini tersisa ${item.current_stock} ${item.unit}. Mohon kirimkan restock secepatnya. Terima kasih!`,
-                            })
-                            setShowWaModal(true)
-                          }}
-                          className="rounded-full text-xs font-bold text-amber-800 border-amber-300 bg-amber-50 hover:bg-amber-100"
+                          onClick={() => void handleCreateProcurementDraft()}
+                          className="rounded-full text-xs font-bold text-red-800 border-red-300 bg-red-50 hover:bg-red-100"
                         >
-                          Pesan via WA
+                          Buat draft PO
                         </Button>
                       </td>
                     </tr>
@@ -942,13 +1060,7 @@ export function AdminDashboardPage() {
                   <h3 className="font-extrabold text-lg text-stone-900">Daftar Mitra Supplier Terverifikasi</h3>
                   <p className="text-xs text-stone-500">Vendor bahan pangan organik bersertifikasi Dova Kitchen.</p>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => navigate('/supplier')}
-                  className="rounded-full bg-stone-900 text-white font-bold text-xs"
-                >
-                  Buka Portal Khusus Supplier →
-                </Button>
+                <Badge variant="outline">Data supplier live</Badge>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
@@ -960,23 +1072,27 @@ export function AdminDashboardPage() {
                         ★ {s.rating}
                       </Badge>
                     </div>
-                    <p className="text-xs text-stone-500 font-mono">{s.phone}</p>
+                    <p className="text-xs text-stone-500 font-mono">Kontak internal: {s.phone || '-'}</p>
+                    <p className={cn('text-[11px] font-semibold', s.telegram_chat_id ? 'text-sky-700' : 'text-rose-600')}>
+                      Telegram: {s.telegram_chat_id ? `chat ID ${s.telegram_chat_id}` : 'belum tertaut'}
+                    </p>
                     <p className="text-[11px] text-stone-600">{s.address}</p>
                     <div className="pt-2 flex justify-end">
                       <Button
                         size="sm"
+                        disabled={!s.telegram_chat_id}
                         onClick={() => {
-                          setWaRecipient({
+                          setTelegramRecipient({
                             type: 'supplier',
                             name: s.name,
-                            phone: s.phone,
+                            chatId: String(s.telegram_chat_id || s.telegram_chat_id_supplier || ''),
                             message: `Halo ${s.name}! Kami ingin mengecek ketersediaan bahan baku untuk katering Dova Kitchen minggu depan.`,
                           })
-                          setShowWaModal(true)
+                          setShowTelegramModal(true)
                         }}
-                        className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-7"
+                        className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-7 disabled:cursor-not-allowed disabled:bg-stone-300"
                       >
-                        Hubungi WA
+                        Hubungi Telegram
                       </Button>
                     </div>
                   </div>
@@ -984,9 +1100,45 @@ export function AdminDashboardPage() {
               </div>
             </div>
 
+            <div className="bg-white rounded-3xl p-6 border border-stone-200/90 shadow-2xs space-y-4">
+              <div>
+                <h3 className="font-extrabold text-lg text-stone-900">Invoice Supplier & Three-Way Match</h3>
+                <p className="text-xs text-stone-500">Invoice tidak dianggap lunas sebelum admin memverifikasi PO, goods receipt, dan nilai tagihan.</p>
+              </div>
+              {supplierInvoiceWarning && (
+                <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+                  <p className="font-bold">Invoice supplier belum tersambung</p>
+                  <p className="mt-1">{supplierInvoiceWarning}</p>
+                  <p className="mt-1 font-mono">supabase/migrations/015_goods_receipt.sql → 016_supplier_billing.sql</p>
+                </div>
+              )}
+              {!supplierInvoices.length ? <p className="rounded-2xl border border-dashed border-stone-200 p-5 text-sm text-stone-500">{supplierInvoiceWarning ? 'Daftar invoice belum bisa dibaca sebelum migration Supabase diterapkan.' : 'Belum ada invoice supplier.'}</p> : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="bg-[#14213D] text-white text-[11px] font-bold"><tr><th className="py-3 px-3">Invoice</th><th className="py-3 px-3">Supplier</th><th className="py-3 px-3">PO</th><th className="py-3 px-3 text-right">Nilai / Expected</th><th className="py-3 px-3">Match</th><th className="py-3 px-3 text-center">Aksi</th></tr></thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {supplierInvoices.map((invoice) => <tr key={invoice.supplier_invoice_id}><td className="py-3 px-3 font-bold">{invoice.invoice_number}<span className="block text-[10px] text-stone-500">{invoice.payment_terms} · jatuh tempo {invoice.due_date}</span></td><td className="py-3 px-3">{invoice.supplier_name || invoice.supplier_id}</td><td className="py-3 px-3 font-mono">{(invoice.po_ids || []).join(', ') || '-'}</td><td className="py-3 px-3 text-right font-mono">Rp {Number(invoice.amount || 0).toLocaleString('id-ID')}<span className="block text-[10px] text-stone-500">expected Rp {Number(invoice.expected_amount || 0).toLocaleString('id-ID')}</span></td><td className="py-3 px-3"><Badge className={cn('border-none text-[10px]', invoice.match_status === 'MATCHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800')}>{invoice.match_status}</Badge></td><td className="py-3 px-3"><div className="flex justify-center gap-1">{invoice.status === 'SUBMITTED' && <><Button size="sm" onClick={() => void handleVerifySupplierInvoice(invoice.supplier_invoice_id, 'APPROVE')} className="h-7 rounded-full bg-emerald-600 text-[10px] text-white">Approve</Button><Button size="sm" onClick={() => void handleVerifySupplierInvoice(invoice.supplier_invoice_id, 'REJECT')} className="h-7 rounded-full bg-rose-600 text-[10px] text-white">Reject</Button></>}{invoice.status === 'APPROVED' && <Button size="sm" onClick={() => void handlePaySupplierInvoice(invoice)} className="h-7 rounded-full bg-amber-400 text-[10px] font-bold text-stone-950">Catat Bayar</Button>}{invoice.status !== 'SUBMITTED' && invoice.status !== 'APPROVED' && <span className="text-[10px] text-stone-400">{invoice.status}</span>}</div></td></tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             {/* Purchase Orders Table */}
             <div className="bg-white rounded-3xl p-6 border border-stone-200/90 shadow-2xs space-y-4">
-              <h3 className="font-extrabold text-lg text-stone-900">Riwayat Purchase Order (PO)</h3>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-extrabold text-lg text-stone-900">Riwayat Purchase Order (PO)</h3>
+                  <p className="text-xs text-stone-500">Draft hanya dibuat dari sourcing live; approval dan queue tetap manual.</p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleCreateProcurementDraft}
+                  className="rounded-full bg-red-800 text-white font-bold text-xs"
+                >
+                  Buat draft dari sourcing live
+                </Button>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left border-collapse">
                   <thead className="bg-[#14213D] text-white text-[11px] font-bold">
@@ -996,6 +1148,7 @@ export function AdminDashboardPage() {
                       <th className="py-3 px-3 text-right">Total Nilai</th>
                       <th className="py-3 px-3 text-center">Status PO</th>
                       <th className="py-3 px-3">Tgl Butuh</th>
+                      <th className="py-3 px-3 text-center">Tindakan</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100 font-sans">
@@ -1014,6 +1167,31 @@ export function AdminDashboardPage() {
                         <td className="py-2.5 px-3 text-stone-500 font-mono text-[11px]">
                           {po.need_by_date || '-'}
                         </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <div className="flex justify-center gap-1">
+                            {po.status === 'DRAFT' && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleApproveProcurementDraft(po.po_id)}
+                                className="h-7 rounded-full bg-emerald-600 text-white text-[10px] font-bold"
+                              >
+                                Approve
+                              </Button>
+                            )}
+                            {po.status === 'APPROVED' && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleQueueProcurementDelivery(po.po_id)}
+                                className="h-7 rounded-full bg-blue-600 text-white text-[10px] font-bold"
+                              >
+                                Queue delivery
+                              </Button>
+                            )}
+                            {po.status !== 'DRAFT' && po.status !== 'APPROVED' && (
+                              <span className="text-[10px] text-stone-400">-</span>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1030,15 +1208,18 @@ export function AdminDashboardPage() {
               <div>
                 <h3 className="font-extrabold text-lg text-stone-900 flex items-center gap-2">
                   <MessageSquare className="size-5 text-emerald-600" />
-                  Otomatisasi WhatsApp & CRM Outbox
+                  Telegram Ops & CRM Outbox
                 </h3>
                 <p className="text-xs text-stone-500">Log pengiriman pesan otomatis ke pelanggan dan supplier.</p>
               </div>
               <Button
-                onClick={() => setShowWaModal(true)}
+                onClick={() => {
+                  setTelegramRecipient({ type: 'customer', name: '', chatId: '', message: '' })
+                  setShowTelegramModal(true)
+                }}
                 className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
               >
-                + Tulis Pesan WhatsApp Baru
+                + Tulis Pesan Telegram Baru
               </Button>
             </div>
 
@@ -1061,7 +1242,7 @@ export function AdminDashboardPage() {
                       </td>
                       <td className="py-2.5 px-3">
                         <p className="font-bold text-stone-900">{n.recipient_name}</p>
-                        <p className="text-[10px] text-stone-400 font-mono">{n.recipient_phone}</p>
+                        <p className="text-[10px] text-stone-400 font-mono">chat ID: {n.recipient_chat_id || '-'}</p>
                       </td>
                       <td className="py-2.5 px-3 uppercase text-[10px] font-bold text-stone-500">
                         {n.recipient_type}
@@ -1136,17 +1317,17 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      {/* ── Modal WhatsApp Otomatis ────────────────────────────────────────── */}
-      {showWaModal && (
+      {/* ── Modal Telegram Admin ───────────────────────────────────────────── */}
+      {showTelegramModal && (
         <div className="fixed inset-0 z-50 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between">
               <h3 className="font-extrabold text-lg text-stone-900 flex items-center gap-2">
                 <MessageSquare className="size-5 text-emerald-600" />
-                Kirim WhatsApp Otomatis
+                Queue Pesan Telegram
               </h3>
               <button
-                onClick={() => setShowWaModal(false)}
+                onClick={() => setShowTelegramModal(false)}
                 className="text-stone-400 hover:text-stone-600"
               >
                 <X className="size-5" />
@@ -1159,11 +1340,11 @@ export function AdminDashboardPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setWaRecipient((p) => ({ ...p, type: 'customer' }))}
+                    onClick={() => setTelegramRecipient((p) => ({ ...p, type: 'customer' }))}
                     className={cn(
                       'flex-1 py-1.5 rounded-xl border font-bold transition-all',
-                      waRecipient.type === 'customer'
-                        ? 'bg-amber-400 text-stone-950 border-amber-500'
+                      telegramRecipient.type === 'customer'
+                        ? 'bg-red-800 text-white border-amber-500'
                         : 'bg-stone-50 border-stone-200 text-stone-600'
                     )}
                   >
@@ -1171,11 +1352,11 @@ export function AdminDashboardPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setWaRecipient((p) => ({ ...p, type: 'supplier' }))}
+                    onClick={() => setTelegramRecipient((p) => ({ ...p, type: 'supplier' }))}
                     className={cn(
                       'flex-1 py-1.5 rounded-xl border font-bold transition-all',
-                      waRecipient.type === 'supplier'
-                        ? 'bg-amber-400 text-stone-950 border-amber-500'
+                      telegramRecipient.type === 'supplier'
+                        ? 'bg-red-800 text-white border-amber-500'
                         : 'bg-stone-50 border-stone-200 text-stone-600'
                     )}
                   >
@@ -1187,29 +1368,30 @@ export function AdminDashboardPage() {
               <div>
                 <label className="font-bold text-stone-700 block mb-1">Nama Penerima</label>
                 <Input
-                  value={waRecipient.name}
-                  onChange={(e) => setWaRecipient((p) => ({ ...p, name: e.target.value }))}
+                  value={telegramRecipient.name}
+                  onChange={(e) => setTelegramRecipient((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Contoh: Joshua / Pak Hadi Supplier"
                   className="rounded-xl text-xs"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-stone-700 block mb-1">Nomor WhatsApp (+62)</label>
+                <label className="font-bold text-stone-700 block mb-1">Telegram chat ID</label>
                 <Input
-                  value={waRecipient.phone}
-                  onChange={(e) => setWaRecipient((p) => ({ ...p, phone: e.target.value }))}
-                  placeholder="+6281326332247"
+                  value={telegramRecipient.chatId}
+                  onChange={(e) => setTelegramRecipient((p) => ({ ...p, chatId: e.target.value }))}
+                  placeholder="Contoh: 123456789"
                   className="rounded-xl text-xs font-mono"
                 />
+                <p className="mt-1 text-[10px] text-stone-500">Chat ID harus berasal dari user/supplier yang sudah memulai chat dengan bot Telegram Dova.</p>
               </div>
 
               <div>
-                <label className="font-bold text-stone-700 block mb-1">Isi Pesan WhatsApp</label>
+                <label className="font-bold text-stone-700 block mb-1">Isi Pesan Telegram</label>
                 <textarea
                   rows={4}
-                  value={waRecipient.message}
-                  onChange={(e) => setWaRecipient((p) => ({ ...p, message: e.target.value }))}
+                  value={telegramRecipient.message}
+                  onChange={(e) => setTelegramRecipient((p) => ({ ...p, message: e.target.value }))}
                   placeholder="Ketik pesan..."
                   className="w-full rounded-xl border border-stone-200 p-2.5 text-xs focus:ring-amber-400"
                 />
@@ -1219,191 +1401,24 @@ export function AdminDashboardPage() {
             <div className="flex items-center justify-end gap-3 pt-2">
               <Button
                 variant="outline"
-                onClick={() => setShowWaModal(false)}
+                onClick={() => setShowTelegramModal(false)}
                 className="rounded-full text-xs font-bold"
               >
                 Batal
               </Button>
               <Button
-                disabled={isSendingWa}
-                onClick={handleSendAutomatedWa}
+                disabled={isSendingTelegram}
+                onClick={handleSendTelegram}
                 className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-5 shadow-sm"
               >
-                {isSendingWa ? 'Mengirim...' : 'Kirim Sekarang →'}
+                {isSendingTelegram ? 'Mengantrikan...' : 'Queue ke Telegram →'}
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Modal Unggah / Tambah Menu Harian ────────────────────────────────── */}
-      {showUploadMenuModal && (
-        <div className="fixed inset-0 z-50 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
-              <div>
-                <h3 className="font-extrabold text-base text-stone-900 flex items-center gap-2">
-                  <Utensils className="size-4.5 text-amber-600" />
-                  Unggah Menu Harian & Resep Bahan (POS & KDS)
-                </h3>
-                <p className="text-xs text-stone-500">
-                  Data menu langsung disinkronkan ke tiket dapur, pengurangan stok bahan, dan kalkulasi demand.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowUploadMenuModal(false)}
-                className="text-stone-400 hover:text-stone-600 rounded-full p-1 hover:bg-stone-100"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
 
-            <div className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Hari Layanan</label>
-                  <select
-                    value={menuForm.hari}
-                    onChange={(e) => setMenuForm((p) => ({ ...p, hari: e.target.value }))}
-                    className="w-full rounded-xl border border-stone-200 p-2 text-xs bg-white font-semibold"
-                  >
-                    {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'].map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Tanggal Sajian</label>
-                  <Input
-                    type="date"
-                    value={menuForm.tanggal}
-                    onChange={(e) => setMenuForm((p) => ({ ...p, tanggal: e.target.value }))}
-                    className="rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Nama Menu / Hidangan</label>
-                <Input
-                  value={menuForm.nama_menu}
-                  onChange={(e) => setMenuForm((p) => ({ ...p, nama_menu: e.target.value }))}
-                  placeholder="Contoh: Ayam Panggang Rosemary & Ubi Madu"
-                  className="rounded-xl text-xs font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Harga Jual Paket (Rp)</label>
-                <Input
-                  type="number"
-                  value={menuForm.harga}
-                  onChange={(e) => setMenuForm((p) => ({ ...p, harga: Number(e.target.value) || 0 }))}
-                  placeholder="48000"
-                  className="rounded-xl text-xs font-mono font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">
-                  Resep & Komposisi Bahan Baku (BOM — Terhubung ke Stok)
-                </label>
-                <textarea
-                  rows={2}
-                  value={menuForm.bom_ingredients}
-                  onChange={(e) => setMenuForm((p) => ({ ...p, bom_ingredients: e.target.value }))}
-                  placeholder="Contoh: Fillet Dada Ayam 200g, Ubi Madu 150g, Rosemary Segar 10g, Minyak Zaitun 15ml"
-                  className="w-full rounded-xl border border-stone-200 p-2.5 text-xs focus:ring-amber-400"
-                />
-                <p className="text-[10px] text-stone-400 mt-0.5">
-                  * Setiap pesanan pelanggan akan otomatis memotong kuantitas stok bahan di atas secara FEFO.
-                </p>
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">
-                  Status Alergen (Wajib Ditandai untuk Keamanan Dapur)
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {['Bebas Alergen', 'Kacang', 'Susu', 'Telur', 'Gluten', 'Kedelai', 'Ikan', 'Krustasea', 'Wijen'].map((al) => {
-                    const isSelected = menuForm.allergens.includes(al)
-                    return (
-                      <button
-                        key={al}
-                        type="button"
-                        onClick={() => {
-                          setMenuForm((p) => ({
-                            ...p,
-                            allergens: isSelected
-                              ? p.allergens.filter((x) => x !== al)
-                              : [...p.allergens, al],
-                          }))
-                        }}
-                        className={cn(
-                          'px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all',
-                          isSelected
-                            ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
-                            : 'bg-stone-50 text-stone-600 border-stone-200 hover:border-stone-400'
-                        )}
-                      >
-                        {al}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Deskripsi & Profil Nutrisi</label>
-                <textarea
-                  rows={2}
-                  value={menuForm.deskripsi}
-                  onChange={(e) => setMenuForm((p) => ({ ...p, deskripsi: e.target.value }))}
-                  placeholder="Contoh: Tinggi protein 34g, karbohidrat kompleks rendah IG, kalori 450 kkal."
-                  className="w-full rounded-xl border border-stone-200 p-2.5 text-xs focus:ring-amber-400"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-100">
-              <Button
-                variant="outline"
-                onClick={() => setShowUploadMenuModal(false)}
-                className="rounded-full text-xs font-bold"
-              >
-                Batal
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!menuForm.nama_menu.trim()) {
-                    toast.error('Mohon isi nama menu terlebih dahulu.')
-                    return
-                  }
-                  toast.success(`Menu '${menuForm.nama_menu}' (${menuForm.hari}) berhasil diunggah!`, {
-                    description: 'Tersinkronisasi ke KDS dapur dan peramalan bahan baku.',
-                  })
-                  setShowUploadMenuModal(false)
-                  setMenuForm({
-                    hari: 'Senin',
-                    tanggal: '2026-10-12',
-                    nama_menu: '',
-                    harga: 48000,
-                    bom_ingredients: '',
-                    allergens: [],
-                    deskripsi: '',
-                  })
-                  refreshData()
-                }}
-                className="rounded-full bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold text-xs px-6 shadow-sm"
-              >
-                Simpan & Publikasikan ke KDS →
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

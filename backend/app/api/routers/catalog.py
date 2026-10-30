@@ -1,7 +1,7 @@
 """Router katalog — endpoint publik yang dipakai landing page.
 
 Pelanggan tidak perlu login untuk melihat paket, menu, dan ketersediaan hari.
-Harga dan label allergen selalu berasal dari katalog di Astra DB.
+Harga dan label allergen selalu berasal dari katalog Supabase/PostgreSQL.
 """
 
 from __future__ import annotations

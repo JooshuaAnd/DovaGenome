@@ -9,7 +9,7 @@
 /* ── Primitives ──────────────────────────────────────────────────────────── */
 
 /** `app.models.enums.Role` */
-export type Role = 'customer' | 'kitchen' | 'admin'
+export type Role = 'customer' | 'kitchen' | 'admin' | 'supplier' | 'courier'
 
 /** `app.models.enums.OrderStatus` */
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED'
@@ -21,7 +21,7 @@ export type PaymentStatus = 'UNPAID' | 'PENDING' | 'PAID' | 'REFUNDED'
 export type RestrictionCategory = 'allergy' | 'intolerance' | 'medical' | 'preference'
 
 /** `app.models.enums.SafetyLevel` — the core domain concept of this product. */
-export type SafetyLevel = 'safe' | 'caution' | 'blocked'
+export type SafetyLevel = 'safe' | 'caution' | 'blocked' | 'requires_verification'
 
 /** `app.core.domain.DAYS` — Sunday is not a service day. */
 export type ServiceDay =
@@ -84,6 +84,7 @@ export interface Passport {
   safety_notes: string
   emergency_notes: string
   emergency_contact: EmergencyContact
+  nutrition_goal: string
   critical_codes: string[]
   legacy_dietary_profile: string
   structured: boolean
@@ -109,6 +110,7 @@ export interface PassportIn {
   emergency_notes?: string
   emergency_contact?: EmergencyContact
   avoided_times?: string[]
+  nutrition_goal?: string
 }
 
 export interface Token {
@@ -123,9 +125,8 @@ export interface LoginPayload {
   password?: string | null
 }
 
-/** Satu form pelanggan: nama lengkap + nomor telepon (login/daftar otomatis). */
+/** Login dan pendaftaran pelanggan otomatis dengan nomor telepon. */
 export interface CustomerSignInPayload {
-  display_name: string
   phone: string
 }
 
@@ -197,14 +198,16 @@ export interface MenuIngredient {
   sumber: string
   potensi_alergen: string
   is_critical_allergen: boolean
+  ingredient_id?: string
+  verification_status?: string
 }
 
 /**
  * One menu option for one service day.
  *
  * A day can hold several options (`menu_id` is the document id, not `hari`),
- * which is what makes "pick one menu per day" possible. `package_codes` empty
- * means available to every package.
+ * and customers may add more than one option to the same order. `package_codes`
+ * empty means available to every package.
  */
 export interface Menu {
   menu_id: string
@@ -218,6 +221,27 @@ export interface Menu {
   published: boolean
   package_codes: string[]
   option_index: number
+  recipe_version_id?: string
+  recipe_verification_status?: string
+  recipe_cross_contact_risk?: string
+  recipe_has_unresolved_components?: boolean
+  /** Optional enriched menu metadata. The UI never invents these values. */
+  service_date?: string
+  date_label?: string
+  price?: number | null
+  ingredients?: string[]
+  bom?: Array<{
+    ingredient: string
+    quantity_grams?: number
+    allergens?: string[]
+  }>
+  calories?: number | null
+  protein_g?: number | null
+  carbs_g?: number | null
+  fat_g?: number | null
+  tags?: string[]
+  is_popular?: boolean
+  color_theme?: string
 }
 
 export interface MenuIn {
@@ -350,6 +374,8 @@ export interface SafetyReport {
 export interface DaySelection {
   hari: ServiceDay
   menu_id: string
+  quantity?: number
+  meal_slot?: 'breakfast' | 'lunch' | 'dinner'
   /** Resolved by the backend so the UI never has to re-join the catalog. */
   service_date?: string
   date_label?: string
@@ -370,7 +396,7 @@ export interface Order {
   package_code: string
   subscription_type: string
   schedule_days: ServiceDay[]
-  /** Exactly one menu per scheduled day; empty only on pre-v3 orders. */
+  /** Menu lines selected for the scheduled days; empty only on pre-v3 orders. */
   selections: DaySelection[]
   selected_allergens: string[]
   allergen_labels: string[]
@@ -426,6 +452,8 @@ export interface OrderCreatePayload {
 export interface DaySelectionInput {
   hari: ServiceDay
   menu_id: string
+  quantity?: number
+  meal_slot?: 'breakfast' | 'lunch' | 'dinner'
 }
 
 export interface OrderUpdatePayload {
@@ -498,7 +526,161 @@ export interface KitchenStatusPayload {
   note?: string
 }
 
+export interface KitchenInventoryItem {
+  ingredient_id: string
+  ingredient_name: string
+  current_stock: number
+  min_stock: number
+  unit: string
+  status: 'AMBIL_AMAN' | 'MENIPIS' | 'HABIS' | string
+  updated_at: string
+  is_scan_ready: boolean
+}
+
+export interface KitchenInventory {
+  items: KitchenInventoryItem[]
+  counts: { total: number; menipis: number; habis: number }
+  fetched_at: string
+}
+
+export interface KitchenConsumptionPayload {
+  ingredient_id: string
+  quantity: number
+  unit: string
+  batch_reference?: string
+  note?: string
+  idempotency_key: string
+}
+
+export interface KitchenConsumptionResult {
+  movement_id: string
+  ingredient_id: string
+  ingredient_name: string
+  consumed_quantity: number
+  unit: string
+  current_stock: number
+  min_stock: number
+  status: string
+  idempotent: boolean
+  lot_allocations: Array<{ lot_id: string; quantity: number; unit: string }>
+}
+
+export type DeliveryStatus = 'PLANNED' | 'ASSIGNED' | 'PICKED_UP' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CANCELLED'
+
+export interface DeliveryStop {
+  stop_id: string
+  order_id: string
+  customer_id: string
+  customer_name: string
+  service_date: string
+  meal_slot: 'breakfast' | 'lunch' | 'dinner'
+  status: DeliveryStatus
+  courier_id?: string | null
+  address?: string
+  proof_ref: string
+  notes: string
+  assigned_at?: string | null
+  picked_up_at?: string | null
+  delivered_at?: string | null
+}
+
 /* ── Admin ───────────────────────────────────────────────────────────────── */
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
+
+export interface ProductionBatchRequirement {
+  requirement_id: string
+  ingredient_id: string
+  ingredient_name: string
+  planned_quantity: number
+  unit: string
+  issued_quantity: number
+  variance_quantity: number
+  planned_grams: number
+  issued_grams: number
+  remaining_grams: number
+}
+
+export interface ProductionBatch {
+  batch_id: string
+  service_date: string
+  meal_slot: MealSlot
+  site_code: string
+  recipe_version_id: string
+  menu_name: string
+  planned_portions: number
+  status: string
+  notes: string
+  requirements: ProductionBatchRequirement[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductionBatchList {
+  items: ProductionBatch[]
+  fetched_at: string
+}
+
+export interface ProductionBatchCreatePayload {
+  service_date: string
+  meal_slot?: MealSlot
+  recipe_version_id: string
+  planned_portions: number
+  site_code?: string
+  notes?: string
+}
+
+export interface ProductionBatchPlanPayload {
+  service_date: string
+  meal_slot?: MealSlot
+  site_code?: string
+}
+
+export interface ProductionBatchPlanResult {
+  status: string
+  service_date: string
+  meal_slot: MealSlot
+  site_code: string
+  planned_batches: Array<{
+    batch_id: string
+    recipe_version_id: string
+    menu_id: string
+    planned_portions: number
+    status: string
+    idempotent: boolean
+  }>
+  blocked_menus: Array<{ menu_id: string; planned_portions: number; reason: string }>
+  source: string
+}
+
+export interface ProductionWeighPayload {
+  requirement_id: string
+  actual_net_grams: number
+  tare_grams?: number
+  idempotency_key: string
+  lot_id?: string | null
+  scale_source?: 'manual'
+  device_id?: string
+  note?: string
+}
+
+export interface ProductionWeighResult {
+  weigh_event_id: string
+  movement_id: string
+  batch_id: string
+  requirement_id: string
+  ingredient_id: string
+  ingredient_name: string
+  actual_net_grams: number
+  stock_quantity_deducted: number
+  stock_unit: string
+  current_stock: number
+  stock_status: string
+  issued_grams: number
+  remaining_planned_grams: number
+  idempotent: boolean
+  lot_allocations: Array<{ lot_id: string; quantity: number; unit: string }>
+}
 
 export interface AdminKpi {
   key: string
@@ -572,7 +754,11 @@ export interface CollectionCount {
 }
 
 export interface AdminSystem {
+  supabase_connected: boolean
+  database_source: string
+  migration_status: string
   astra_connected: boolean
+  astra_state: string
   demo_mode: boolean
   credentials: Record<string, boolean>
   collections: CollectionCount[]
@@ -595,9 +781,13 @@ export interface AiConsultResult {
   reply: string
   session_id: string
   model: string
+  provider: string
   flow_id: string
+  trace_id: string
   latency_ms: number
   degraded: boolean
+  readiness_state: string
+  reason_code: string
   message: string
 }
 
@@ -636,7 +826,11 @@ export interface HealthPayload {
   version: string
   environment: string
   demo_mode: boolean
+  db_connected: boolean
+  supabase_connected: boolean
+  database_source: string
   astra_connected: boolean
+  astra_state: string
   collections: Record<string, unknown>
   credentials: Record<string, boolean>
   telegram_bot_username: string

@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  ArrowRight,
   Bot,
-  CheckCircle2,
   Send,
   ShieldCheck,
   Sparkles,
@@ -14,8 +12,11 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SafetyBadge } from '@/components/safety/SafetyBadge'
 import { useAuth } from '@/hooks/useAuth'
+import { useServiceWeek, zipDayOptions } from '@/hooks/useServiceWeek'
 import { cn } from '@/lib/utils'
+import { rememberChatPreference } from '@/lib/chatPreferenceMemory'
 import { aiService } from '@/services/ai'
 import { customersService } from '@/services/customers'
 import type { Passport } from '@/types'
@@ -29,48 +30,19 @@ interface Message {
 }
 
 const QUICK_PROMPTS = [
-  'Menu apa yang 100% aman dari alergi saya?',
+  'Cek menu terhadap alergi saya',
   'Rekomendasikan menu makan siang paling bergizi',
   'Kenapa hari Jumat pesanan paling ramai & apa menu terlaris?',
-  'Bagaimana katering Dova menjamin nol kontaminasi silang?',
+  'Bagaimana saya mencatat alergi di profil?',
   'Cek bahan dan resep Ayam Panggang Rosemary',
-]
-
-const SAMPLE_SAFE_MENUS = [
-  {
-    name: 'Ayam Panggang Rosemary & Ubi Madu',
-    day: 'Senin',
-    calories: '480 kcal',
-    price: 42000,
-    safeTag: 'Bebas Kacang & Seafood',
-    image:
-      'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    name: 'Beef Bulgogi Wijen & Nasi Beras Cokelat',
-    day: 'Selasa',
-    calories: '520 kcal',
-    price: 42000,
-    safeTag: 'Tinggi Protein Presisi',
-    image:
-      'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    name: 'Fillet Dori Panggang Lemon & Salad Jagung',
-    day: 'Kamis',
-    calories: '450 kcal',
-    price: 42000,
-    safeTag: 'Rendah Karbohidrat Sehat',
-    image:
-      'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80',
-  },
 ]
 
 export function AiPage() {
   const { customer, isAuthenticated } = useAuth()
   const navigate = useNavigate()
+  const serviceWeek = useServiceWeek()
   const [passport, setPassport] = useState<Passport | null>(null)
-  const [rfmSegment, setRfmSegment] = useState<string>('Champions')
+  const [rfmSegment, setRfmSegment] = useState<string>('Belum tersedia')
   const [inputText, setInputText] = useState('')
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -79,7 +51,7 @@ export function AiPage() {
     {
       id: 'welcome',
       sender: 'bob',
-      text: `Halo! 👋 Saya Chef BOB, asisten kuliner & katering presisi pribadimu di Dova Kitchen. Saya siap membantumu memilih menu lezat yang 100% aman dari riwayat alergimu, menganalisis gizi, dan merencanakan katering mingguan. Ada yang bisa saya bantu hari ini?`,
+      text: `Halo! 👋 Saya Chef BOB, asisten menu Dova Kitchen. Tanyakan bahan, menu, atau pantanganmu. Saya akan merujuk ke data katalog yang tersedia dan memberi tahu kalau ada hal yang belum bisa dipastikan. Ada yang bisa saya bantu?`,
       time: 'Baru saja',
     },
   ])
@@ -95,15 +67,16 @@ export function AiPage() {
         .catch(() => null)
     }
 
-    const cid = customer?.customer_id || 'cust_ml_001'
-    customersService
-      .getRfm(cid)
-      .then((data) => {
-        if (data && data.segment) {
-          setRfmSegment(data.segment)
-        }
-      })
-      .catch(() => null)
+    if (isAuthenticated && customer?.customer_id) {
+      customersService
+        .getRfm(customer.customer_id)
+        .then((data) => {
+          if (data && data.segment && data.segment !== 'NO_HISTORY') {
+            setRfmSegment(data.segment)
+          }
+        })
+        .catch(() => null)
+    }
   }, [isAuthenticated, customer])
 
   // Auto-scroll to bottom of chat
@@ -112,6 +85,10 @@ export function AiPage() {
   }, [messages])
 
   const userAllergens = passport?.allergies?.map((a) => a.label || a.code) || []
+  const userAvoids = passport?.avoided_ingredients || []
+  const menuRecommendations = serviceWeek.days.flatMap((day) =>
+    zipDayOptions(day).map(({ menu, safety }) => ({ menu, day, safety })),
+  ).filter((item) => item.safety?.level === 'safe' && item.safety.is_recommended).slice(0, 3)
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim()
@@ -136,15 +113,21 @@ export function AiPage() {
           customer_name: customer?.display_name || customer?.username || 'Tamu',
           allergens: userAllergens.join(', '),
           loyalty_segment: rfmSegment,
+          conversation_history: rememberChatPreference(customer?.customer_id || 'guest', text),
         },
       })
+      if ((response.reason_code === 'structured_preference_saved' || response.reason_code === 'structured_allergen_saved') && isAuthenticated) {
+        customersService.getPassport().then(setPassport).catch(() => null)
+        window.dispatchEvent(new Event('dova:passport-updated'))
+      }
 
+      const degradedNote = response.degraded
+        ? `\n\nStatus: ${response.message || 'Layanan AI utama sedang tidak tersedia.'}`
+        : ''
       const bobMsg: Message = {
         id: `bob-${Date.now()}`,
         sender: 'bob',
-        text:
-          response.reply ||
-          'Terima kasih telah bertanya kepada Chef BOB. Semua menu Dova Kitchen disiapkan di workstation steril higienis dengan pemisahan bahan alergen ketat.',
+        text: `${response.reply || 'Chef BOB belum punya jawaban untuk pertanyaan itu.'}${degradedNote}`,
         time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       }
 
@@ -155,7 +138,7 @@ export function AiPage() {
         id: `bob-err-${Date.now()}`,
         sender: 'bob',
         text:
-          'Maaf, koneksi ke mesin AI Chef sedang sibuk. Namun Anda dapat yakin bahwa seluruh menu Dova Kitchen selalu melewati filter keamanan resep otomatis sebelum disajikan.',
+          'Maaf, layanan chat sedang tidak tersambung. Aku belum bisa memastikan jawaban untuk pertanyaan ini. Coba kirim lagi sebentar lagi atau cek pantangan dan status resep di Passport/Menu.',
         time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       }
       setMessages((prev) => [...prev, errorMsg])
@@ -167,10 +150,10 @@ export function AiPage() {
   return (
     <div className="space-y-6">
       {/* ── 1. Top Executive Banner (Chef BOB & IBM BOB Engine) ── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-stone-900 via-rose-950 to-stone-900 p-6 md:p-8 text-white shadow-xl shadow-rose-950/10 border border-rose-900/40">
+      <div className="relative overflow-hidden rounded-3xl bg-[radial-gradient(circle_at_90%_10%,rgba(246,198,167,.24),transparent_33%),linear-gradient(120deg,#3c1018,#711f2b_58%,#a7353d)] p-6 md:p-8 text-white shadow-xl shadow-rose-950/15 border border-rose-900">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
-            <div className="size-16 rounded-2xl bg-gradient-to-tr from-amber-400 to-rose-500 flex items-center justify-center text-stone-950 shadow-lg shadow-amber-500/20 shrink-0">
+            <div className="size-16 rounded-2xl bg-[#f2c7aa] flex items-center justify-center text-[#4a151e] shadow-lg shadow-black/20 shrink-0">
               <Bot className="size-8" />
             </div>
 
@@ -179,35 +162,22 @@ export function AiPage() {
                 <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">
                   Chef BOB
                 </h1>
-                <Badge className="bg-amber-400 text-stone-950 font-black text-[10px] tracking-wider px-2 py-0.5 border-none">
-                  AI PRECISION CHEF
-                </Badge>
-                <Badge className="bg-white/10 text-rose-300 font-mono text-[10px] border border-rose-400/30">
-                  Powered by IBM BOB Engine
+                <Badge className="bg-white/10 text-gold-200 font-semibold text-[10px] tracking-wider px-2 py-0.5 border border-white/15">
+                  ASISTEN MENU
                 </Badge>
               </div>
 
-              <p className="text-xs md:text-sm text-stone-300 max-w-xl">
-                Asisten kecerdasan kuliner presisi yang memahami Dietary Passport kesehatan Anda,
-                riwayat transaksi, dan keamanan resep tanpa kompromi.
+              <p className="text-xs md:text-sm text-slate-200 max-w-xl">
+                Tanya menu, bahan, dan pantanganmu. Status kecocokan menu selalu diperiksa dari katalog dapur.
               </p>
             </div>
           </div>
 
           {/* Customer Personal Health & Loyalty Pill */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3.5 border border-white/10 flex flex-col gap-2 shrink-0 md:min-w-[260px]">
+          <div className="bg-black/15 backdrop-blur-md rounded-2xl p-3.5 border border-white/15 flex flex-col gap-2 shrink-0 md:min-w-[260px]">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-medium text-stone-300">Profil Pelanggan:</span>
-              <Badge
-                className={cn(
-                  'text-[10px] font-bold px-2 py-0.5 border-none',
-                  rfmSegment === 'Champions'
-                    ? 'bg-amber-400 text-stone-950'
-                    : rfmSegment === 'At Risk'
-                    ? 'bg-rose-500 text-white animate-pulse'
-                    : 'bg-emerald-500 text-white'
-                )}
-              >
+              <Badge className="border-none bg-white/15 px-2 py-0.5 text-[10px] font-bold text-white">
                 {rfmSegment}
               </Badge>
             </div>
@@ -215,16 +185,23 @@ export function AiPage() {
             <div className="flex items-center gap-2 text-xs font-bold text-white">
               <ShieldCheck className="size-4 text-emerald-400 shrink-0" />
               <span className="truncate">
-                {userAllergens.length > 0
-                  ? `Proteksi: ${userAllergens.join(', ')}`
-                  : 'Diet Bebas Alergen Sehat'}
+                {[
+                  userAllergens.length ? `Alergi: ${userAllergens.join(', ')}` : '',
+                  userAvoids.length ? `Tidak suka: ${userAvoids.join(', ')}` : '',
+                  passport?.nutrition_goal === 'high_fat_high_protein' ? 'Target: tinggi lemak & protein' : '',
+                  passport?.nutrition_goal === 'high_protein' ? 'Fokus protein' : '',
+                  passport?.nutrition_goal === 'high_fat' ? 'Fokus lemak' : '',
+                  passport?.nutrition_goal === 'low_fat' ? 'Pilihan rendah lemak' : '',
+                  passport?.nutrition_goal === 'fat_loss' ? 'Target: mengurangi lemak tubuh' :
+                    passport?.nutrition_goal === 'lighter' ? 'Fokus: makan lebih ringan' : '',
+                ].filter(Boolean).join(' · ') || 'Belum ada pantangan tersimpan'}
               </span>
             </div>
 
             <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[10px] text-stone-300">
               <span>{customer?.display_name || 'Pelanggan Tamu'}</span>
               <Link to="/passport" className="text-amber-300 underline hover:text-amber-200">
-                Ubah Alergi →
+                Ubah Profil →
               </Link>
             </div>
           </div>
@@ -236,86 +213,58 @@ export function AiPage() {
         {/* Left Column: Recommended Safe Dishes for User (lg: 5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-extrabold text-base text-stone-900 flex items-center gap-2">
+              <h2 className="font-extrabold text-base text-ink flex items-center gap-2">
               <Sparkles className="size-4 text-amber-500" />
-              Rekomendasi Menu Presisi Hari Ini
+              Pilihan dari katalog live
             </h2>
-            <Link to="/order" className="text-xs font-bold text-rose-600 hover:underline">
+            <Link to="/order" className="text-xs font-bold text-forest-800 hover:underline">
               Lihat Semua →
             </Link>
           </div>
 
           <div className="space-y-3">
-            {SAMPLE_SAFE_MENUS.map((menu, idx) => (
-              <div
-                key={idx}
-                className="rounded-3xl bg-white border border-stone-200/90 p-4 shadow-2xs hover:border-rose-400 transition-all flex items-center gap-4 group"
-              >
-                <img
-                  src={menu.image}
-                  alt={menu.name}
-                  className="size-20 rounded-2xl object-cover shrink-0 group-hover:scale-105 transition-transform"
-                />
-
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[10px] font-bold border-stone-200">
-                      {menu.day}
-                    </Badge>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                      {menu.safeTag}
-                    </span>
+            {serviceWeek.loading ? (
+              <div className="rounded-2xl border border-line bg-surface p-5 text-sm text-muted-text">Memuat katalog dan status kecocokan…</div>
+            ) : menuRecommendations.length > 0 ? menuRecommendations.map(({ menu, day, safety }) => (
+              <article key={menu.menu_id} className="rounded-2xl border border-line bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-forest-700">{day.hari} · {day.date_label}</p>
+                    <h3 className="mt-1 font-bold leading-snug text-ink">{menu.nama_menu}</h3>
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-text">{menu.deskripsi}</p>
                   </div>
-
-                  <h3 className="font-bold text-xs text-stone-900 leading-snug truncate">
-                    {menu.name}
-                  </h3>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="font-black text-rose-600 text-xs">
-                      Rp {menu.price.toLocaleString('id-ID')}
-                    </span>
-
-                    <Button
-                      size="sm"
-                      onClick={() => navigate('/order')}
-                      className="rounded-full bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] h-7 px-3 gap-1 shadow-2xs"
-                    >
-                      Pesan
-                      <ArrowRight className="size-3" />
-                    </Button>
-                  </div>
+                  {safety && <SafetyBadge level={safety.level} />}
                 </div>
+                {menu.allergen_labels.length > 0 && <p className="mt-3 text-xs text-muted-text">Mengandung: {menu.allergen_labels.join(', ')}</p>}
+                <Button size="sm" onClick={() => navigate('/order')} className="mt-3 h-8 rounded-full bg-forest-900 px-4 text-xs text-white hover:bg-forest-800">Lihat di menu</Button>
+              </article>
+            )) : (
+              <div className="rounded-2xl border border-caution-line bg-caution-soft p-5 text-sm text-caution-strong">
+                {serviceWeek.error ? 'Menu live belum dapat dimuat. Coba lagi beberapa saat.' : 'Belum ada resep yang lolos untuk disebut aman. Status resep yang belum diverifikasi tetap ditampilkan di katalog.'}
+                <Button variant="outline" size="sm" onClick={() => navigate('/order')} className="mt-3 block rounded-full">Buka katalog</Button>
               </div>
-            ))}
+            )}
           </div>
 
-          <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-300/80 text-amber-950 space-y-1.5 text-xs">
-            <div className="flex items-center gap-2 font-bold text-amber-900">
-              <CheckCircle2 className="size-4 text-amber-600" />
-              <span>Garansi Keamanan Resep Katering Dova</span>
-            </div>
-            <p className="text-[11px] text-amber-900/80 leading-relaxed">
-              Setiap menu yang Anda pesan diverifikasi silang dengan algoritma eliminasi alergen
-              terhadap 9 kelompok alergen utama. Bebas kontaminasi, aman untuk keluarga.
-            </p>
+          <div className="rounded-2xl border border-caution-line bg-caution-soft p-4 text-xs text-caution-strong">
+            <p className="font-bold">Pemeriksaan alergi dari katalog dapur</p>
+            <p className="mt-1 leading-relaxed">Resep yang belum diverifikasi tidak diberi label aman. Simpan pantangan di profil agar ikut diperiksa saat memesan.</p>
           </div>
         </div>
 
         {/* Right Column: Live Interactive Conversation with Chef BOB (lg: 7 cols) */}
-        <div className="lg:col-span-7 bg-white rounded-3xl border border-stone-200/90 shadow-2xs flex flex-col h-[650px] overflow-hidden">
+        <div className="lg:col-span-7 bg-surface rounded-3xl border border-line shadow-sm flex flex-col min-h-[600px] h-[min(760px,calc(100dvh-12rem))] overflow-hidden">
           {/* Chat Header */}
-          <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between bg-stone-50/50">
+          <div className="px-5 py-4 border-b border-line flex items-center justify-between bg-canvas/70">
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-2xl bg-stone-900 text-amber-300 flex items-center justify-center font-black">
+              <div className="size-10 rounded-2xl bg-forest-900 text-gold-300 flex items-center justify-center font-black">
                 <Bot className="size-5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-sm text-stone-900 flex items-center gap-1.5">
+                <h3 className="font-extrabold text-sm text-ink flex items-center gap-1.5">
                   Chef BOB
-                  <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
                 </h3>
-                <p className="text-[11px] text-stone-500">Live AI Assistant • Siap Menjawab</p>
+                <p className="text-[11px] text-muted-text">Asisten menu · jawaban berbasis layanan tersedia</p>
               </div>
             </div>
 

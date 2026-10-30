@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Any, Literal
+
 from pydantic import Field, field_validator
 
 from app.core.domain import ALL_STATUSES
@@ -40,6 +43,126 @@ class KitchenBoardOut(ApiModel):
     total_active: int = 0
     fetched_at: str = ""
     demo: bool = False
+
+
+class KitchenInventoryItemOut(ApiModel):
+    ingredient_id: str = ""
+    ingredient_name: str
+    current_stock: float
+    min_stock: float
+    unit: str
+    status: str
+    updated_at: str = ""
+    is_scan_ready: bool = False
+
+
+class KitchenInventoryOut(ApiModel):
+    items: list[KitchenInventoryItemOut] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
+    fetched_at: str = ""
+
+
+class KitchenConsumptionIn(ApiModel):
+    ingredient_id: str = Field(min_length=1, max_length=120)
+    quantity: float = Field(gt=0, le=100_000)
+    unit: str = Field(min_length=1, max_length=32)
+    batch_reference: str = Field(default="", max_length=120)
+    note: str = Field(default="", max_length=500)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class KitchenConsumptionOut(ApiModel):
+    movement_id: str
+    ingredient_id: str
+    ingredient_name: str
+    consumed_quantity: float
+    unit: str
+    current_stock: float
+    min_stock: float
+    status: str
+    idempotent: bool = False
+    lot_allocations: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ── Production batch & weigh ledger ────────────────────────────────────────
+MealSlot = Literal["breakfast", "lunch", "dinner", "snack"]
+
+
+class ProductionBatchCreateIn(ApiModel):
+    service_date: date
+    meal_slot: MealSlot = "lunch"
+    recipe_version_id: str = Field(min_length=1, max_length=160)
+    planned_portions: int = Field(gt=0, le=100_000)
+    site_code: str = Field(default="main-kitchen", min_length=1, max_length=80)
+    notes: str = Field(default="", max_length=500)
+
+
+class ProductionBatchPlanIn(ApiModel):
+    service_date: date
+    meal_slot: MealSlot = "lunch"
+    site_code: str = Field(default="main-kitchen", min_length=1, max_length=80)
+
+
+class ProductionBatchRequirementOut(ApiModel):
+    requirement_id: str
+    ingredient_id: str
+    ingredient_name: str
+    planned_quantity: float
+    unit: str
+    issued_quantity: float = 0
+    variance_quantity: float = 0
+    planned_grams: float = 0
+    issued_grams: float = 0
+    remaining_grams: float = 0
+
+
+class ProductionBatchOut(ApiModel):
+    batch_id: str
+    service_date: str
+    meal_slot: MealSlot
+    site_code: str
+    recipe_version_id: str
+    menu_name: str = ""
+    planned_portions: int
+    status: str
+    notes: str = ""
+    requirements: list[ProductionBatchRequirementOut] = Field(default_factory=list)
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class ProductionWeighIn(ApiModel):
+    requirement_id: str = Field(min_length=1, max_length=160)
+    actual_net_grams: float = Field(gt=0, le=1_000_000)
+    tare_grams: float = Field(default=0, ge=0, le=1_000_000)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+    lot_id: str | None = Field(default=None, max_length=160)
+    scale_source: Literal["manual"] = "manual"
+    device_id: str = Field(default="", max_length=160)
+    note: str = Field(default="", max_length=500)
+
+
+class ProductionWeighOut(ApiModel):
+    weigh_event_id: str
+    movement_id: str
+    batch_id: str
+    requirement_id: str
+    ingredient_id: str
+    ingredient_name: str
+    actual_net_grams: float
+    stock_quantity_deducted: float
+    stock_unit: str
+    current_stock: float
+    stock_status: str
+    issued_grams: float
+    remaining_planned_grams: float
+    idempotent: bool = False
+    lot_allocations: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ProductionBatchListOut(ApiModel):
+    items: list[ProductionBatchOut] = Field(default_factory=list)
+    fetched_at: str = ""
 
 
 # ── Admin ───────────────────────────────────────────────────────────────────
@@ -116,7 +239,10 @@ class CollectionCount(ApiModel):
 
 
 class AdminSystemOut(ApiModel):
-    astra_connected: bool
+    supabase_connected: bool = False
+    database_source: str = "supabase_postgres"
+    astra_connected: bool = False
+    astra_state: str = "OFFLINE_LEGACY"
     demo_mode: bool
     credentials: dict[str, bool] = Field(default_factory=dict)
     collections: list[CollectionCount] = Field(default_factory=list)
@@ -138,9 +264,13 @@ class AiConsultOut(ApiModel):
     reply: str
     session_id: str
     model: str = "langflow"
+    provider: str = "langflow"
     flow_id: str = ""
+    trace_id: str = ""
     latency_ms: int = 0
     degraded: bool = False
+    readiness_state: str = "CONNECTED"
+    reason_code: str = "flow_execution_ok"
     message: str = ""
 
 

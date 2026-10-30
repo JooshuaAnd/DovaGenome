@@ -63,7 +63,7 @@ def get_catalog(*, include_inactive: bool = False) -> CatalogOut:
         # more than one option; a set of unique days is the real intent.
         service_days=service_days(),
         is_live=raw["is_live"],
-        source="astra",
+        source="supabase_postgres",
     )
 
 

@@ -60,6 +60,9 @@ export function MenuPage() {
 
   const selectedPackage = packages?.find((item) => item.code === packageCode) ?? null
   const blockedDays = days.filter((day) => levelByDay[day.hari] === 'blocked')
+  const verificationDays = days.filter(
+    (day) => levelByDay[day.hari] === 'requires_verification',
+  )
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6 sm:py-10">
@@ -151,6 +154,14 @@ export function MenuPage() {
                 level="blocked"
                 title={`${blockedDays.length} hari punya menu yang tidak cocok`}
                 description={`Menu pada ${blockedDays.map((day) => day.hari).join(', ')} mengandung bahan yang tidak boleh kamu makan. Menu yang tetap tersedia di hari yang sama bisa dipilih sebagai gantinya.`}
+              />
+            )}
+
+            {verificationDays.length > 0 && (
+              <SafetyCallout
+                level="requires_verification"
+                title={`${verificationDays.length} hari masih menunggu verifikasi recipe`}
+                description={`Menu pada ${verificationDays.map((day) => day.hari).join(', ')} belum dapat dipesan sampai ingredient, takaran, dan risiko kontaminasi silang diverifikasi operator.`}
               />
             )}
 

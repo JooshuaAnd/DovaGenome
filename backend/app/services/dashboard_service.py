@@ -1,7 +1,7 @@
 """Dashboard service — data untuk KDS, Admin, dan metrik.
 
 Aturan yang tidak bisa ditawar:
-  * Tidak ada data demo/fallback. Bila Astra DB mati, endpoint harus gagal
+  * Tidak ada data demo/fallback. Bila Supabase/PostgreSQL mati, endpoint harus gagal
     dengan jelas, bukan menampilkan pesanan palsu ke dapur.
   * KDS hanya menampilkan label siap tampil, bukan kode internal.
   * Penghitungan "hari ini" memakai WIB.
@@ -52,7 +52,13 @@ def kitchen_board(*, statuses: list[str] | None = None) -> KitchenBoardOut:
     if unknown:
         raise DatabaseError(f"Status tidak valid untuk papan dapur: {', '.join(unknown)}")
 
-    orders = order_repo.fetch_orders(statuses=wanted, limit=300)
+    # No-pay-no-cook: unpaid/pending-payment orders never enter the kitchen
+    # board, even if their fulfilment status is still PENDING.
+    orders = order_repo.fetch_orders(
+        statuses=wanted,
+        payment_statuses=["PAID"],
+        limit=300,
+    )
     labels = _label_lookup()
 
     columns: dict[str, list[KitchenTicketOut]] = {s: [] for s in wanted}

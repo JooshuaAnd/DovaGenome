@@ -31,11 +31,9 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 import time
-import uuid
 
 import requests
 import telebot
-from astrapy import DataAPIClient
 from dotenv import load_dotenv
 from telebot import types
 from telebot.formatting import escape_markdown as esc_md
@@ -69,33 +67,51 @@ telebot.apihelper.RETRY_TIMEOUT = 2
 # Konfigurasi
 # ---------------------------------------------------------------------------
 
-TELEGRAM_TOKEN = _required_env("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_CUSTOMER_BOT_TOKEN") or _required_env("TELEGRAM_TOKEN")
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-FLOW_ID = os.getenv("LANGFLOW_FLOW_ID", "09778e1b-f424-48e9-bf6d-36d8fb2cdb90")
-LANGFLOW_API_URL = os.getenv(
-    "LANGFLOW_API_URL", f"http://127.0.0.1:7860/api/v1/run/{FLOW_ID}"
-)
-LANGFLOW_API_KEY = _required_env("LANGFLOW_API_KEY")
+DOVAGENOME_BACKEND_URL = os.getenv(
+    "DOVAGENOME_BACKEND_URL", "http://127.0.0.1:8000"
+).strip().rstrip("/")
+DOVAGENOME_INTERNAL_TOKEN = (
+    os.getenv("DOVAGENOME_INTERNAL_TOKEN") or os.getenv("LANGFLOW_INTERNAL_TOKEN") or ""
+).strip()
+TELEGRAM_ADMIN_CHAT_IDS = {
+    value.strip()
+    for value in os.getenv("TELEGRAM_ADMIN_CHAT_IDS", "").split(",")
+    if value.strip()
+}
 
 #: Nama brand yang tampil di pesan
 BRAND = "DovaGenome"
 TOTAL_STEPS = 3
 
 
+def is_telegram_admin(chat_id: int | str) -> bool:
+    return str(chat_id) in TELEGRAM_ADMIN_CHAT_IDS
+
+
 # ---------------------------------------------------------------------------
-# Astra DB
+# Supabase bridge melalui FastAPI
 # ---------------------------------------------------------------------------
 
-ASTRA_DB_API_ENDPOINT      = _required_env("ASTRA_DB_API_ENDPOINT")
-ASTRA_DB_APPLICATION_TOKEN = _required_env("ASTRA_DB_APPLICATION_TOKEN")
-astra_database = DataAPIClient(ASTRA_DB_APPLICATION_TOKEN).get_database(
-    ASTRA_DB_API_ENDPOINT
-)
-D.ensure_collections(astra_database)
+def _backend_headers() -> dict[str, str]:
+    if not DOVAGENOME_INTERNAL_TOKEN:
+        raise RuntimeError("DOVAGENOME_INTERNAL_TOKEN belum diisi untuk bridge Telegram.")
+    return {"X-Dova-Internal-Token": DOVAGENOME_INTERNAL_TOKEN}
 
-user_profiles_collection  = astra_database.get_collection("user_profiles")
-kitchen_orders_collection = astra_database.get_collection("kitchen_orders")
+
+def _backend_json(method: str, path: str, *, payload: dict | None = None, timeout: int = 15) -> dict | list:
+    response = requests.request(
+        method,
+        f"{DOVAGENOME_BACKEND_URL}{path}",
+        json=payload,
+        headers=_backend_headers(),
+        timeout=timeout,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Backend Telegram HTTP {response.status_code}")
+    return response.json()
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +125,11 @@ _cache_loaded_at: float = 0.0
 
 
 def _load_config_from_db() -> dict:
-    """Tarik katalog dari Astra DB; otomatis jatuh ke data bawaan."""
-    raw = D.load_catalog(astra_database)
+    """Tarik katalog melalui FastAPI dari Supabase; Astra tidak dipakai."""
+    response = requests.get(f"{DOVAGENOME_BACKEND_URL}/api/catalog", timeout=15)
+    if response.status_code >= 400:
+        raise RuntimeError(f"Backend catalog HTTP {response.status_code}")
+    raw = response.json()
     packages  = raw["packages"]
     allergens = raw["allergens"]
 
@@ -120,7 +139,11 @@ def _load_config_from_db() -> dict:
     return {
         "packages":      packages,
         "allergens":     allergens,
-        "menus":         raw["menus"],
+        "menus":         {
+            str(menu.get("hari")): menu
+            for menu in raw.get("menus", [])
+            if menu.get("hari")
+        },
         "paket_options": {code_of(p): p.get("name", "") for p in packages if code_of(p)},
         "paket_days":    {code_of(p): p.get("days", []) for p in packages if code_of(p)},
         "allergen_opts": {code_of(a): a.get("label", "") for a in allergens if code_of(a)},
@@ -276,12 +299,13 @@ def get_daily_menu_options(hari: str) -> list[dict]:
     options: list[dict] = []
     seen_names: set[str] = set()
 
-    # 1. Ambil menu utama dari DB / Astra
+    # 1. Ambil menu utama dari katalog Supabase melalui FastAPI
     db_menus = cfg_menus()
     primary = db_menus.get(hari)
     if primary and primary.get("nama_menu"):
         name = str(primary["nama_menu"]).strip()
         options.append({
+            "menu_id": str(primary.get("menu_id") or ""),
             "nama_menu": name,
             "deskripsi": str(primary.get("deskripsi", "Menu andalan dapur")),
             "potensi_alergen": str(primary.get("potensi_alergen", "Sesuai SOP")),
@@ -567,20 +591,26 @@ def reset_flow(user_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 def save_user_profile(chat_id, user_data: dict) -> None:
-    user_profiles_collection.update_one(
-        {"_id": str(chat_id)},
-        {"$set": {k: v for k, v in user_data.items() if k != "_id"}},
-        upsert=True,
+    payload = {"chat_id": int(chat_id)}
+    if "nama" in user_data:
+        payload["nama"] = str(user_data.get("nama") or "")
+    if "alergen" in user_data:
+        payload["alergen"] = list(user_data.get("alergen") or [])
+    if "avoided_times" in user_data:
+        payload["avoided_times"] = list(user_data.get("avoided_times") or [])
+    _backend_json(
+        "POST",
+        "/api/internal/telegram/profile",
+        payload=payload,
     )
 
 
 def get_user_profile(chat_id) -> dict:
     try:
-        profile = user_profiles_collection.find_one({"_id": str(chat_id)}) or {}
+        profile = _backend_json("GET", f"/api/internal/telegram/profile/{int(chat_id)}") or {}
     except Exception as exc:
         print(f"[DB] Gagal membaca profil: {exc}")
         profile = {}
-    profile.pop("_id", None)
     return profile
 
 
@@ -608,39 +638,50 @@ def create_weekly_order(
     else:
         sop = "Tidak ada pantangan khusus — prosedur steril standar berlaku."
 
-    # Susun pilihan menu tiap hari aktif
+    package_code = next(
+        (code for code, package_days in cfg_days().items() if set(days).issubset(set(package_days))),
+        "",
+    )
+    if not package_code:
+        raise RuntimeError("Tidak ada paket Supabase yang mencakup hari pilihan.")
+
+    canonical_allergens = []
+    category_map = {
+        "sf_": "alg_seafood", "glt_": "alg_gluten", "dry_": "alg_dairy",
+        "kcg_": "alg_kacang", "kdl_": "alg_kedelai", "tlr_": "alg_telur",
+    }
+    for code in sorted(allergens):
+        canonical_allergens.append(
+            next((value for prefix, value in category_map.items() if code.startswith(prefix)), code)
+        )
+    canonical_allergens = list(dict.fromkeys(canonical_allergens))
+
+    # Nama pilihan dari flow lama dipetakan ke menu_id katalog Supabase.
     selections = selections or {}
     db_menus = cfg_menus()
-    menu_selections: list[dict[str, str]] = []
+    selected_menu_ids: dict[str, str] = {}
     for day in days:
         chosen = selections.get(day)
-        if not chosen or chosen == "SKIP":
-            opts = get_daily_menu_options(day)
-            chosen = opts[0]["nama_menu"] if opts else (db_menus.get(day, {}).get("nama_menu") or "Menu Standar Harian")
-        menu_selections.append({
-            "hari": day,
-            "menu_id": f"menu_{day.lower()}",
-            "nama_menu": chosen,
-        })
+        opts = get_daily_menu_options(day)
+        selected = next((item for item in opts if item.get("nama_menu") == chosen), None)
+        if selected and selected.get("menu_id"):
+            selected_menu_ids[day] = str(selected["menu_id"])
+        elif db_menus.get(day, {}).get("menu_id"):
+            selected_menu_ids[day] = str(db_menus[day]["menu_id"])
 
-    now = datetime.datetime.now(datetime.timezone.utc)
-    order = {
-        "order_id":           f"ORD-{now.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6].upper()}",
-        "chat_id":            chat_id,
-        "customer_name":      customer_name,
-        "subscription_type":  paket_label,
-        "schedule_days":      days,
-        "selected_allergens": labels,
-        "dietary_profile":    ", ".join(labels) if labels else "Tidak ada",
-        "avoided_times":      avoided_times,
-        "menu_selections":    menu_selections,
-        "selected_menus":     {s["hari"]: s["nama_menu"] for s in menu_selections},
-        "kitchen_notes":      sop,
-        "status":             "PENDING",
-        "created_at":         now.isoformat(),
-    }
-    kitchen_orders_collection.insert_one(order)
-    order["_id"] = None
+    order = dict(_backend_json(
+        "POST",
+        "/api/internal/telegram/orders",
+        payload={
+            "chat_id": int(chat_id),
+            "customer_name": customer_name,
+            "package_code": package_code,
+            "selected_allergen_codes": canonical_allergens,
+            "schedule_days": days,
+            "selections": selected_menu_ids,
+        },
+        timeout=30,
+    ))
 
     # Passport selalu diperbarui — termasuk profil lama yang masih "udang/seafood"
     save_user_profile(chat_id, {
@@ -653,11 +694,7 @@ def create_weekly_order(
 
 def my_orders(chat_id: int, limit: int = 8) -> list[dict]:
     try:
-        return list(
-            kitchen_orders_collection.find(
-                {"chat_id": int(chat_id)}, sort={"created_at": -1}, limit=limit
-            )
-        )
+        return list(_backend_json("GET", f"/api/internal/telegram/orders/{int(chat_id)}")[:limit])
     except Exception as exc:
         print(f"[DB] Gagal membaca pesanan: {exc}")
         return []
@@ -680,6 +717,105 @@ def kb_main() -> types.InlineKeyboardMarkup:
 
 def kb_home_row() -> list[types.InlineKeyboardButton]:
     return [types.InlineKeyboardButton("🏠 Menu utama", callback_data="back_main")]
+
+
+def kb_admin_procurement(po_id: str, *, approved: bool = False) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    if approved:
+        kb.row(
+            types.InlineKeyboardButton("🚚 Kirim ke supplier", callback_data=f"admin_po_send_{po_id}"),
+            types.InlineKeyboardButton("🔁 Muat ulang", callback_data="admin_po_refresh"),
+        )
+    else:
+        kb.row(
+            types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_po_approve_{po_id}"),
+            types.InlineKeyboardButton("📝 Minta edit", callback_data=f"admin_po_edit_{po_id}"),
+        )
+    return kb
+
+
+def _admin_backend_request(path: str, chat_id: int, *, params: dict[str, str] | None = None) -> requests.Response:
+    return requests.post(
+        f"{DOVAGENOME_BACKEND_URL}{path}",
+        params=params,
+        headers={
+            "Accept": "application/json",
+            "X-Dova-Internal-Token": DOVAGENOME_INTERNAL_TOKEN,
+            "X-Telegram-Chat-Id": str(chat_id),
+        },
+        timeout=15,
+    )
+
+
+def get_pending_procurement(chat_id: int) -> list[dict]:
+    if not is_telegram_admin(chat_id) or not DOVAGENOME_INTERNAL_TOKEN:
+        return []
+    try:
+        response = requests.get(
+            f"{DOVAGENOME_BACKEND_URL}/api/admin/procurement/telegram/pending",
+            headers={
+                "Accept": "application/json",
+                "X-Dova-Internal-Token": DOVAGENOME_INTERNAL_TOKEN,
+                "X-Telegram-Chat-Id": str(chat_id),
+            },
+            timeout=15,
+        )
+        if response.status_code != 200:
+            print(f"[Procurement] Backend mengembalikan HTTP {response.status_code}; draft tidak dikirim ke Telegram.")
+            return []
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
+    except Exception as exc:
+        print(f"[Procurement] Tidak dapat mengambil draft: {type(exc).__name__}")
+        return []
+
+
+def format_procurement_draft(po: dict) -> str:
+    lines = [
+        "🧾 *Draft PO menunggu approval*",
+        f"PO: `{esc_md(str(po.get('po_id') or '-'))}`",
+        f"Supplier: *{esc_md(str(po.get('supplier_name') or '-'))}*",
+        f"Butuh tanggal: {esc_md(str(po.get('need_by_date') or 'belum diisi'))}",
+        f"Total: *Rp {int(po.get('total_amount') or 0):,}*".replace(",", "."),
+        "",
+        "Item:",
+    ]
+    for item in po.get("items") or []:
+        lines.append(
+            f"• {esc_md(str(item.get('item_name') or '-'))}: "
+            f"{item.get('qty') or 0} {esc_md(str(item.get('unit') or ''))}"
+        )
+    lines.extend([
+        "",
+        "Approve untuk membuka tahap pengiriman. Minta edit akan mempertahankan status DRAFT.",
+    ])
+    return "\n".join(lines)
+
+
+def notify_admin_procurement_drafts() -> None:
+    """Poll only the allowlisted admin chats; provider delivery stays gated."""
+    sent_keys: set[str] = set()
+    while True:
+        try:
+            for raw_chat_id in TELEGRAM_ADMIN_CHAT_IDS:
+                try:
+                    chat_id = int(raw_chat_id)
+                except ValueError:
+                    continue
+                for po in get_pending_procurement(chat_id):
+                    po_id = str(po.get("po_id") or "")
+                    if not po_id or po_id in sent_keys:
+                        continue
+                    bot.send_message(
+                        chat_id,
+                        format_procurement_draft(po),
+                        parse_mode="Markdown",
+                        reply_markup=kb_admin_procurement(po_id),
+                    )
+                    sent_keys.add(po_id)
+        except Exception as exc:
+            print(f"[Procurement] Notifikasi admin gagal: {type(exc).__name__}")
+        time.sleep(45)
 
 
 def text_returning_customer(chat_id: int, profile: dict) -> str:
@@ -1219,7 +1355,8 @@ def text_ticket(order: dict) -> str:
     )
 
     menu_lines = []
-    for s in (order.get("menu_selections") or []):
+    selections = order.get("menu_selections") or order.get("selections") or []
+    for s in selections:
         menu_lines.append(f"  • {s.get('hari')}: {esc_md(s.get('nama_menu', '—'))}")
     menu_str = "\n".join(menu_lines) if menu_lines else "  • Sesuai menu mingguan"
 
@@ -1440,6 +1577,27 @@ def cmd_help(message):
                      reply_markup=kb_back_only())
 
 
+@bot.message_handler(commands=["procurement", "pos"])
+def cmd_procurement(message):
+    """Admin-only manual refresh for the supplier approval inbox."""
+    chat_id = message.chat.id
+    if not is_telegram_admin(chat_id):
+        bot.reply_to(message, "Perintah ini hanya tersedia untuk admin Dova Kitchen.")
+        return
+    drafts = get_pending_procurement(chat_id)
+    if not drafts:
+        bot.send_message(chat_id, "✅ Tidak ada draft PO yang menunggu approval.")
+        return
+    for po in drafts:
+        po_id = str(po.get("po_id") or "")
+        bot.send_message(
+            chat_id,
+            format_procurement_draft(po),
+            parse_mode="Markdown",
+            reply_markup=kb_admin_procurement(po_id),
+        )
+
+
 def route_deep_link(chat_id: int, payload: str, edit_id: int | None) -> None:
     """Terjemahkan ?start=<payload> dari landing page ke layar yang tepat."""
     if payload == "order":
@@ -1518,41 +1676,36 @@ def ask_langflow(chat_id: int, loading_id: int, prompt: str) -> None:
 # ---------------------------------------------------------------------------
 
 def get_langflow_response(message_text: str, session_id=None) -> str:
+    """Thin client: use the same FastAPI AI contract as the web app.
+
+    Telegram must not own a second Langflow/RAG fallback path. The backend
+    applies AI_MODE and returns an explicit degraded/source status.
+    """
     payload = {
-        "input_value": message_text,
-        "input_type": "chat",
-        "output_type": "chat",
+        "message": message_text,
+        "session_id": str(session_id or "telegram-guest"),
+        "context": {"channel": "telegram"},
     }
-    if session_id:
-        payload["session_id"] = str(session_id)
-    headers = {"x-api-key": LANGFLOW_API_KEY, "Content-Type": "application/json"}
-
     try:
-        response = requests.post(LANGFLOW_API_URL, json=payload, headers=headers,
-                                 timeout=15)
+        response = requests.post(
+            f"{DOVAGENOME_BACKEND_URL}/api/ai/consult",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
         if response.status_code == 200:
-            res = response.json()
-            for path in (
-                lambda r: r["outputs"][0]["outputs"][0]["results"]["message"]["text"],
-                lambda r: r["outputs"][0]["outputs"][0]["artifacts"]["text"],
-                lambda r: r["text"],
-            ):
-                try:
-                    value = path(res)
-                    if isinstance(value, str) and value.strip():
-                        return value
-                except (KeyError, IndexError, TypeError):
-                    continue
+            result = response.json()
+            reply = str(result.get("reply") or "").strip()
+            if reply:
+                if result.get("degraded"):
+                    status = str(result.get("message") or "AI degraded")
+                    return f"{reply}\n\nStatus AI: {status}"
+                return reply
+        print(f"[AI] Backend mengembalikan HTTP {response.status_code}; fallback dinonaktifkan.")
     except Exception as exc:
-        print(f"[Langflow] Beralih ke Supabase Live RAG: {exc}")
+        print(f"[AI] Backend tidak tersedia; fallback dinonaktifkan: {type(exc).__name__}")
 
-    # Aliran Data RAG Supabase Dinamis (Profil, Alergi, Riwayat Pesanan, & Menu)
-    try:
-        from app.services.rag_ai_service import generate_rag_answer
-        return generate_rag_answer(message_text, customer_id=str(session_id or ""), session_id=str(session_id or ""))
-    except Exception as err:
-        print(f"[Supabase RAG Error]: {err}")
-        return "Halo! Kami menyediakan hidangan lezat dan aman dari alergi yang dipersiapkan dengan workstation steril di Dova Kitchen."
+    return "Chef BOB sedang tidak tersedia. Silakan coba lagi beberapa saat."
 
 
 
@@ -1593,6 +1746,69 @@ def _dispatch(call: types.CallbackQuery, ctx: dict[str, str]) -> None:
     sess    = session(chat_id)
 
     # ── navigasi ──────────────────────────────────────────────────────────
+    if data == "admin_po_refresh":
+        if not is_telegram_admin(chat_id):
+            ctx["toast"] = "Akses admin diperlukan"
+            return
+        drafts = get_pending_procurement(chat_id)
+        if not drafts:
+            _send_or_edit(chat_id, msg_id, "✅ Tidak ada draft PO yang menunggu approval.", kb_back_only())
+            return
+        first = drafts[0]
+        _send_or_edit(
+            chat_id,
+            msg_id,
+            format_procurement_draft(first),
+            kb_admin_procurement(str(first.get("po_id") or "")),
+        )
+        return
+
+    if data.startswith("admin_po_"):
+        if not is_telegram_admin(chat_id):
+            ctx["toast"] = "Akses admin diperlukan"
+            return
+        action_and_id = data[len("admin_po_"):]
+        action, _, po_id = action_and_id.partition("_")
+        if not po_id or action not in {"approve", "send", "edit"}:
+            ctx["toast"] = "Aksi PO tidak dikenali"
+            return
+        if action == "edit":
+            bot.send_message(
+                chat_id,
+                f"📝 PO {po_id} tetap DRAFT. Edit jumlah atau item dari dashboard admin, lalu jalankan /procurement untuk review ulang.",
+            )
+            ctx["toast"] = "Draft tetap terbuka untuk diedit"
+            return
+        endpoint = "approve" if action == "approve" else "send"
+        try:
+            response = _admin_backend_request(
+                f"/api/admin/procurement/telegram/{po_id}/{endpoint}",
+                chat_id,
+            )
+            if response.status_code not in (200, 201):
+                ctx["toast"] = f"PO belum dapat diproses (HTTP {response.status_code})"
+                return
+            result = response.json() if response.content else {}
+            if action == "approve":
+                _send_or_edit(
+                    chat_id,
+                    msg_id,
+                    f"✅ PO {po_id} di-approve. Pengiriman ke supplier belum dilakukan; tekan tombol berikut untuk queue delivery.",
+                    kb_admin_procurement(po_id, approved=True),
+                )
+            else:
+                _send_or_edit(
+                    chat_id,
+                    msg_id,
+                    f"🚚 PO {po_id} masuk notification outbox dengan status PENDING. Provider supplier masih perlu mengonfirmasi delivery.",
+                    kb_back_only(),
+                )
+            ctx["toast"] = str(result.get("status") or "Berhasil")
+        except Exception as exc:
+            log.warning("procurement telegram action gagal: %s", type(exc).__name__)
+            ctx["toast"] = "Backend procurement tidak tersedia"
+        return
+
     if data == "back_main":
         reset_flow(chat_id)
         show_main(chat_id, edit_id=msg_id)
@@ -2067,6 +2283,10 @@ def on_text(message):
 
 if __name__ == "__main__":
     print("🤖 Bot Telegram DovaGenome berjalan…  (Ctrl+C untuk berhenti)")
+    if TELEGRAM_ADMIN_CHAT_IDS and DOVAGENOME_INTERNAL_TOKEN:
+        threading.Thread(target=notify_admin_procurement_drafts, daemon=True).start()
+    else:
+        print("[Procurement] Inbox admin Telegram nonaktif: allowlist chat atau internal token belum diisi.")
     while True:
         try:
             bot.infinity_polling(timeout=20, long_polling_timeout=20, skip_pending=True)

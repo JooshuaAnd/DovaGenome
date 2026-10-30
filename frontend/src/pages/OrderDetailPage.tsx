@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   ChefHat,
   ClipboardList,
+  ExternalLink,
   FileText,
   MapPin,
   Receipt,
@@ -9,7 +10,7 @@ import {
   StickyNote,
   Workflow,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { EmptyState } from '@/components/common/EmptyState'
@@ -34,10 +35,13 @@ import {
 import { cn } from '@/lib/utils'
 import { ordersService } from '@/services/orders'
 import type { DaySafety, DaySelection, OrderDetail } from '@/types'
+import type { DeliveryStop } from '@/services/types'
 
 /** A service day of this order, with the menu the customer actually chose. */
 interface ResolvedDay {
   hari: DaySafety['hari']
+  menu_id: string
+  quantity: number
   nama_menu: string
   deskripsi: string
   allergen_labels: string[]
@@ -68,14 +72,33 @@ export function OrderDetailPage() {
 
   const order = query.data
   const status = order ? ORDER_STATUSES[order.status] : null
+  const [deliveryStops, setDeliveryStops] = useState<DeliveryStop[]>([])
+
+  useEffect(() => {
+    let active = true
+    if (!id) return () => { active = false }
+    ordersService.deliveryTracking(id).then((stops) => {
+      if (active) setDeliveryStops(stops)
+    }).catch(() => {
+      // Delivery migration may still be waiting for the Supabase backup gate;
+      // the order detail remains usable without inventing a tracking state.
+      if (active) setDeliveryStops([])
+    })
+    return () => { active = false }
+  }, [id])
 
   const days = useMemo<ResolvedDay[]>(() => {
     if (!order) return []
 
     const fromSelections: ResolvedDay[] = order.selections.map((selection: DaySelection) => {
-      const report = order.safety?.per_day.find((item) => item.hari === selection.hari)
+      const report =
+        order.safety?.per_day.find(
+          (item) => item.hari === selection.hari && item.menu_id === selection.menu_id,
+        ) ?? order.safety?.per_day.find((item) => item.hari === selection.hari)
       return {
         hari: selection.hari,
+        menu_id: selection.menu_id,
+        quantity: selection.quantity ?? 1,
         nama_menu: selection.nama_menu ?? report?.nama_menu ?? 'Menu tidak tercatat',
         deskripsi: selection.deskripsi ?? report?.deskripsi ?? '',
         allergen_labels: selection.allergen_labels ?? report?.allergen_labels ?? [],
@@ -94,6 +117,8 @@ export function OrderDetailPage() {
 
     return (order.safety?.per_day ?? []).map((item) => ({
       hari: item.hari,
+      menu_id: item.menu_id,
+      quantity: 1,
       nama_menu: item.nama_menu,
       deskripsi: item.deskripsi,
       allergen_labels: item.allergen_labels,
@@ -180,6 +205,16 @@ export function OrderDetailPage() {
               />
             )}
 
+            {deliveryStops.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="flex items-center gap-2 text-lg"><MapPin aria-hidden="true" className="size-4 text-muted-text" />Status pengiriman</h2>
+                {order.delivery_address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-2 text-sm font-semibold text-forest-800 hover:bg-canvas"><MapPin aria-hidden="true" className="size-4" />Lihat alamat tujuan di Maps<ExternalLink aria-hidden="true" className="size-3.5" /></a>}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {deliveryStops.map((stop) => <Card key={stop.stop_id} className="space-y-2"><div className="flex items-center justify-between gap-2"><p className="font-semibold text-ink">{new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${stop.service_date.slice(0, 10)}T12:00:00`))}</p><Badge variant="outline">{stop.status}</Badge></div><p className="text-sm text-ink-soft">{stop.status === 'DELIVERED' ? `Diterima${stop.delivered_at ? ` ${formatDateTimeWIB(stop.delivered_at)}` : ''}.` : stop.status === 'OUT_FOR_DELIVERY' ? 'Kurir sedang mengantar pesanan.' : 'Menunggu proses pengiriman.'}</p>{stop.proof_ref && <p className="text-xs text-muted-text">Bukti: {stop.proof_ref}</p>}</Card>)}
+                </div>
+              </section>
+            )}
+
             <section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-lg">
@@ -187,7 +222,7 @@ export function OrderDetailPage() {
                   Menu per hari layanan
                 </h2>
                 <Badge variant="outline" className="font-semibold">
-                  {days.length} hari
+                  {days.length} menu
                 </Badge>
               </div>
 
@@ -201,13 +236,14 @@ export function OrderDetailPage() {
               ) : (
                 <ul className="space-y-3">
                   {days.map((day) => (
-                    <li key={day.hari}>
+                    <li key={`${day.hari}-${day.menu_id}`}>
                       <Card className="space-y-3">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-xs font-bold uppercase tracking-wide text-muted-text">
                               {DAY_SHORT[day.hari]}
                               {day.date_label ? ` · ${day.date_label}` : ''}
+                              {day.quantity > 1 ? ` · ${day.quantity} porsi` : ''}
                             </p>
                             <p className="font-display text-base font-bold text-ink">
                               {day.nama_menu}
@@ -352,10 +388,10 @@ export function OrderDetailPage() {
                   </p>
                 )}
                 {order.delivery_address && (
-                  <p className="flex items-start gap-1.5 text-sm text-ink-soft">
-                    <MapPin aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-                    {order.delivery_address}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-ink-soft">
+                    <p className="flex items-start gap-1.5"><MapPin aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{order.delivery_address}</p>
+                    <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-forest-800 hover:underline">Buka di Maps<ExternalLink aria-hidden="true" className="size-3.5" /></a>
+                  </div>
                 )}
                 {order.avoided_times.length > 0 && (
                   <p className="text-sm text-ink-soft">

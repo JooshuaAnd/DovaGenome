@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ExternalLink, LayoutDashboard } from 'lucide-react'
+import { ClipboardCheck, ExternalLink, LayoutDashboard, Utensils, Users, Factory, MapPinned, Megaphone, TrendingUp } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import type { NavItem } from '@/components/layout/Sidebar'
@@ -22,14 +22,23 @@ export function AdminLayout({
 
   const nav: NavItem[] = [
     { to: '/admin', label: 'Ringkasan & KDS', icon: LayoutDashboard, end: true },
+    { to: '/admin/daily-menu', label: 'Menu mingguan', icon: Utensils },
+    { to: '/admin/menu-demand', label: 'Menu & rekomendasi', icon: TrendingUp },
+    { to: '/admin/recipes', label: 'Recipe Verification', icon: ClipboardCheck },
+    { to: '/admin/customers', label: 'Pelanggan', icon: Users },
+    { to: '/admin/production', label: 'Batch produksi', icon: Factory },
+    { to: '/admin/delivery', label: 'Pengiriman', icon: MapPinned },
+    { to: '/admin/campaigns', label: 'Kampanye CRM', icon: Megaphone },
   ]
 
   return (
     <AppShell
       nav={nav}
       navLabel="Operasional"
+      navAccent="red"
       title={title}
       width="wide"
+      className="bg-[#FAF7F2]"
       sidebarFooter={
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">

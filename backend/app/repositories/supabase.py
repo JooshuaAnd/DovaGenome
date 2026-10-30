@@ -31,6 +31,8 @@ log = get_logger("dova.repo.supabase")
 
 _lock = threading.Lock()
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
+_last_fail_time: float = 0.0
+_COOLDOWN_SECONDS: float = 20.0
 
 # Tabel yang dikelola aplikasi — dipakai health check.
 MANAGED_TABLES = (
@@ -44,6 +46,66 @@ MANAGED_TABLES = (
     "order_items",
     "order_status_events",
     "customer_feedback",
+    "suppliers",
+    "supplier_items",
+    "purchase_orders",
+    "po_items",
+    "notification_outbox",
+    "supplier_accounts",
+    "ingredients",
+    "recipe_versions",
+    "recipe_components",
+    "recipe_verification_events",
+    "payment_attempts",
+    "kitchen_tickets",
+    "inventory_movements",
+    "inventory_reservations",
+    "rfm_snapshots",
+    "forecast_snapshots",
+)
+
+# Later-phase tables are checked separately so core forecast/RFM services do
+# not become unavailable while an approved operational migration is pending.
+PHASE_EXTENSION_TABLES = (
+    "recipe_import_jobs",
+    "production_batches",
+    "production_batch_requirements",
+    "stock_lots",
+    "inventory_lot_allocations",
+    "weigh_events",
+    "goods_receipts",
+    "goods_receipt_items",
+    "supplier_invoices",
+    "supplier_invoice_pos",
+    "supplier_payment_records",
+    "delivery_stops",
+    "delivery_events",
+)
+
+PHASE_PRODUCTION_BATCH_TABLES = (
+    "recipe_import_jobs",
+    "production_batches",
+    "production_batch_requirements",
+    "stock_lots",
+    "weigh_events",
+)
+
+PHASE_PROCUREMENT_RECEIPT_TABLES = (
+    "goods_receipts",
+    "goods_receipt_items",
+)
+
+PHASE_SUPPLIER_BILLING_TABLES = (
+    "goods_receipts",
+    "goods_receipt_items",
+    "supplier_invoices",
+    "supplier_invoice_pos",
+    "supplier_payment_records",
+)
+
+PHASE_DELIVERY_TABLES = (
+    "delivery_stops",
+    "delivery_events",
 )
 
 
@@ -87,12 +149,19 @@ def _build_dsn() -> str:
 
 
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
-    global _pool
+    global _pool, _last_fail_time
     if _pool is not None:
         return _pool
     with _lock:
         if _pool is not None:
             return _pool
+        import time
+        now = time.time()
+        if now - _last_fail_time < _COOLDOWN_SECONDS:
+            raise DatabaseError(
+                "Database tidak tersedia. Periksa SUPABASE_DB_API_ENDPOINT dan "
+                "SUPABASE_DB_APPLICATION_TOKEN di .env."
+            )
         try:
             dsn = _build_dsn()
             _pool = psycopg2.pool.ThreadedConnectionPool(
@@ -101,11 +170,12 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
                 dsn=dsn,
                 cursor_factory=psycopg2.extras.RealDictCursor,
                 options="-c search_path=public",
-                connect_timeout=10,
+                connect_timeout=3,
                 sslmode="require",
             )
             log.info("Supabase pool dibuat (minconn=1 maxconn=10)")
         except Exception as exc:
+            _last_fail_time = time.time()
             log.error("Gagal membuat pool Supabase: %s: %s", type(exc).__name__, exc)
             raise DatabaseError(
                 "Database tidak tersedia. Periksa SUPABASE_DB_API_ENDPOINT dan "
@@ -190,6 +260,42 @@ def execute_one(sql: str, params: tuple | None = None) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
+def has_column(table_name: str, column_name: str) -> bool:
+    """Read-only compatibility check for an optional schema extension."""
+    try:
+        row = execute_one(
+            """
+            SELECT 1 AS present
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = %s
+              AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+        return bool(row)
+    except Exception as exc:
+        log.info("Kolom opsional %s.%s belum dapat diverifikasi: %s", table_name, column_name, type(exc).__name__)
+        return False
+
+
+def has_table(table_name: str) -> bool:
+    """Read-only compatibility check for an optional application table."""
+    try:
+        row = execute_one(
+            """
+            SELECT 1 AS present
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = %s
+            """,
+            (table_name,),
+        )
+        return bool(row)
+    except Exception as exc:
+        log.info("Tabel opsional %s belum dapat diverifikasi: %s", table_name, type(exc).__name__)
+        return False
+
+
 def execute_write(sql: str, params: tuple | None = None) -> int:
     """Jalankan INSERT/UPDATE/DELETE, kembalikan rowcount. Auto-retry 1x bila broken pipe."""
     for attempt in range(2):
@@ -241,6 +347,72 @@ def check_migrations() -> bool:
     except Exception as exc:
         log.warning("check_migrations gagal: %s: %s", type(exc).__name__, exc)
         return False
+
+
+def check_phase_migrations() -> bool:
+    """Read-only check for recipe-import and production-ledger migrations."""
+    try:
+        rows = execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ANY(%s)
+            """,
+            (list(PHASE_EXTENSION_TABLES),),
+        )
+        existing = {r["table_name"] for r in rows}
+        missing = [t for t in PHASE_EXTENSION_TABLES if t not in existing]
+        if missing:
+            log.info("Phase extension tables pending: %s", missing)
+            return False
+        return True
+    except Exception as exc:
+        log.warning("check_phase_migrations gagal: %s: %s", type(exc).__name__, exc)
+        return False
+
+
+def _check_table_group(table_names: tuple[str, ...], label: str) -> bool:
+    """Read-only migration check for one independently deployable phase group."""
+    try:
+        rows = execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ANY(%s)
+            """,
+            (list(table_names),),
+        )
+        existing = {r["table_name"] for r in rows}
+        missing = [table for table in table_names if table not in existing]
+        if missing:
+            log.info("%s tables pending: %s", label, missing)
+            return False
+        return True
+    except Exception as exc:
+        log.warning("%s migration check gagal: %s: %s", label, type(exc).__name__, exc)
+        return False
+
+
+def check_production_batch_migrations() -> bool:
+    """Check only the recipe-import/production-batch extension group."""
+    return _check_table_group(PHASE_PRODUCTION_BATCH_TABLES, "Production batch")
+
+
+def check_procurement_receipt_migrations() -> bool:
+    """Check only the goods-receipt extension group."""
+    return _check_table_group(PHASE_PROCUREMENT_RECEIPT_TABLES, "Goods receipt")
+
+
+def check_supplier_billing_migrations() -> bool:
+    """Check goods-receipt plus invoice/payable tables for Phase 7 billing."""
+    return _check_table_group(PHASE_SUPPLIER_BILLING_TABLES, "Supplier billing")
+
+
+def check_delivery_migrations() -> bool:
+    """Check the status-based delivery dispatch tables."""
+    return _check_table_group(PHASE_DELIVERY_TABLES, "Delivery")
 
 
 def count_rows(table: str) -> int | None:

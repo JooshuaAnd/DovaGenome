@@ -185,8 +185,8 @@ def generate_rag_answer(
     rfm_info = None
     if cid:
         try:
-            from app.services.analytics_ml_service import calculate_crm_rfm_segments
-            rfm_data = calculate_crm_rfm_segments()
+            from app.services.rfm_service import build_rfm_report
+            rfm_data = build_rfm_report()
             rfm_info = next((c for c in rfm_data.get("customers", []) if c["customer_id"] == cid), None)
         except Exception:
             rfm_info = None
@@ -204,22 +204,37 @@ def generate_rag_answer(
 
     # ── J. Prediksi Demand Pesanan & Analisis Transaksi (Menu Terlaris, Hari & Bulan Apa) ──
     if any(w in msg for w in ["paling banyak", "terlaris", "hari apa", "bulan apa", "prediksi demand", "bikin menu apa", "tren pesanan", "rekomendasi hari"]):
-        from app.services.analytics_ml_service import calculate_transaction_demand_insights
-        insights = calculate_transaction_demand_insights()
-        
-        top_list = [f"• #{idx+1} {d['nama_menu']} ({d['hari']}): {d['total_portions']} porsi ({d['share_percentage']}% share)" for idx, d in enumerate(insights.get("top_dishes", [])[:4])]
-        plan_list = [f"• {p['day']}: {p['recommended_menu']} (Prediksi: {p['predicted_portions']} porsi) — {p['rationale']}" for p in insights.get("ai_daily_plan", [])[:5]]
+        from app.services.forecast_service import ForecastUnavailable, build_live_forecast_report
 
+        try:
+            report = build_live_forecast_report()
+        except ForecastUnavailable as exc:
+            return "Demand insights live belum tersedia: " + str(exc)
+        top_series = sorted(
+            report.get("series", []),
+            key=lambda item: float(item.get("total_observed") or 0),
+            reverse=True,
+        )[:4]
+        top_list = [
+            f"• #{index + 1} {item.get('label', item.get('series_key'))}: "
+            f"{item.get('total_observed', 0)} {item.get('unit', 'portion')} terobservasi"
+            for index, item in enumerate(top_series)
+        ]
+        if report.get("status") != "OK":
+            return (
+                f"Demand insights live berstatus {report.get('status')}. "
+                f"Sumber: {report.get('source')}; observasi terakhir: "
+                f"{report.get('latest_observation_date', '-')} "
+                f"({report.get('data_age_days', '-')} hari).\n\n"
+                "Top menu di bawah hanya ringkasan historis terobservasi, bukan "
+                "prediksi operasional:\n" + "\n".join(top_list)
+            )
         return (
-            f"📈 Analisis Prediksi Demand & Perencanaan Menu AI (Berdasarkan 1.000 Transaksi Dova Kitchen):\n\n"
-            f"🏆 Menu Paling Banyak Dipesan (Bestseller):\n"
-            + "\n".join(top_list) +
-            f"\n\n📅 Pola Hari & Puncak Permintaan:\n"
-            f"• Hari Pemesanan Tertinggi: Hari {insights.get('peak_day', 'Jumat')} & Rabu (lonjakan volume katering kantor hingga +32%).\n"
-            f"• Hari Senin & Selasa memiliki permintaan stabil untuk menu tinggi protein & karbohidrat kompleks.\n\n"
-            f"💡 Rekomendasi Menu AI Harian untuk Dapur:\n"
-            + "\n".join(plan_list) +
-            f"\n\nSistem AI otomatis mengaitkan peramalan porsi ini dengan perhitungan kebutuhan bahan baku (BOM) agar dapur siap tepat waktu tanpa waste."
+            "📈 Demand insights live dari order PAID:\n\n"
+            "🏆 Menu dengan total observasi tertinggi:\n" + "\n".join(top_list) +
+            f"\n\nSumber: {report.get('source')} | Versi: {report.get('calculation_version')}\n"
+            "Rekomendasi menu AI harian dan BOM/PO tidak dibuat dari data yang "
+            "belum memiliki kontrak tambahan."
         )
 
     # ── G. Analisis Statistik, Rumus Matematika & Deteksi Outlier (Excel SuperMarket Analysis) ──
@@ -252,8 +267,8 @@ def generate_rag_answer(
 
     # ── H. CRM & Marketing RFM (Recency, Frequency, Monetary) ──
     if any(w in msg for w in ["rfm", "crm", "marketing", "segmen", "loyal", "champions", "at risk"]):
-        from app.services.analytics_ml_service import calculate_crm_rfm_segments
-        rfm_data = calculate_crm_rfm_segments()
+        from app.services.rfm_service import build_rfm_report
+        rfm_data = build_rfm_report()
         seg_counts = rfm_data.get("segment_counts", {})
         
         return (
@@ -274,33 +289,41 @@ def generate_rag_answer(
 
     # ── I. Supply Chain ML, Demand Forecasting & Safety Stock (ROP) ──
     if any(w in msg for w in ["supply chain", "forecast", "peramalan", "safety stock", "rop", "reorder point", "bahan baku"]):
-        from app.services.analytics_ml_service import calculate_supply_chain_ml_forecast
-        sc_data = calculate_supply_chain_ml_forecast()
-        df = sc_data.get("demand_forecast", {})
-        materials = sc_data.get("materials", [])
-        
-        mat_lines = []
-        for m in materials[:4]:
-            mat_lines.append(
-                f"• {m['ingredient_name']}: Stok={m['current_stock']} {m['unit']} | "
-                f"Konsumsi Rata-rata/Hari={m['daily_consumption_avg']} {m['unit']} | "
-                f"Safety Stock (SS)={m['safety_stock']} {m['unit']} | ROP={m['reorder_point_rop']} {m['unit']} [{m['status']}]"
-            )
+        from app.services.forecast_service import ForecastUnavailable, build_live_forecast_report
 
+        try:
+            forecast_report = build_live_forecast_report()
+        except ForecastUnavailable as exc:
+            return (
+                "Forecast supply chain live belum tersedia: " + str(exc) +
+                " SS/ROP belum boleh dihitung karena BOM dan inventory terverifikasi belum lengkap."
+            )
+        if forecast_report.get("status") != "OK":
+            return (
+                f"Forecast demand live berstatus {forecast_report.get('status')}. "
+                f"Sumber: {forecast_report.get('source')}; "
+                f"observasi terakhir: {forecast_report.get('latest_observation_date', '-')} "
+                f"({forecast_report.get('data_age_days', '-')} hari). "
+                "SS/ROP tidak dihitung dari data stale atau BOM yang belum terverifikasi."
+            )
+        first_day = sum(
+            float(series.get("forecast", [{}])[0].get("quantity") or 0)
+            for series in forecast_report.get("series", [])
+            if series.get("forecast")
+        )
+        best_model = min(
+            forecast_report.get("model_comparison", {}),
+            key=lambda method: forecast_report["model_comparison"][method].get("mae", float("inf")),
+            default="-",
+        )
         return (
-            f"🚚 Model Peramalan Supply Chain & Optimasi Inventori (Machine Learning):\n\n"
-            f"📐 Rumus Manajemen Rantai Pasok Presisi:\n"
-            f"1. Safety Stock (Tingkat Layanan 95%, Z=1.65): SS = Z × σ_d × √L\n"
-            f"2. Titik Pemesanan Ulang (Reorder Point): ROP = (d̄ × L) + SS\n"
-            f"   (dengan d̄ = rata-rata konsumsi harian, L = lead time supplier dalam hari)\n"
-            f"3. Peramalan Permintaan (Regresi Linier & Moving Average 7 Hari): ŷ = α + β·t\n\n"
-            f"📈 Proyeksi Permintaan Dapur:\n"
-            f"• Rata-rata Pesanan Harian: {df.get('average_daily_meals', 28)} porsi\n"
-            f"• Moving Average 7 Hari: {df.get('moving_average_7d', 28)} porsi\n"
-            f"• Proyeksi Kebutuhan Besok: {df.get('linear_regression_forecast_tomorrow', 30)} porsi\n\n"
-            f"📦 Status Reorder Point (ROP) Bahan Baku:\n"
-            + "\n".join(mat_lines) +
-            f"\n\nBOM explosion otomatis menerbitkan draf PO ke supplier ketika stok bahan menembus titik ROP."
+            "Forecast demand live berhasil dihitung dari order PAID.\n\n"
+            f"• Forecast agregat hari pertama: {first_day:.2f} porsi\n"
+            f"• Model evidence terbaik: {best_model}\n"
+            f"• Sumber: {forecast_report.get('source')}\n"
+            f"• Versi kalkulasi: {forecast_report.get('calculation_version')}\n\n"
+            "Safety Stock, ROP, dan PO belum dihitung karena membutuhkan BOM, "
+            "unit conversion, inventory quantity, dan lead time supplier yang terverifikasi."
         )
 
     # A. Salam / Perkenalan Chef BOB

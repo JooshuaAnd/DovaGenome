@@ -1,11 +1,12 @@
-# Backend DovaGenome AI — Phase 2+ (Supabase/Postgres)
-# Dipisah dari root requirements.txt (yang masih dipakai Streamlit).
+# Backend DovaGenome AI (FastAPI + Supabase / Postgres)
 # Install: python -m pip install -r backend/requirements.txt
 
 # ── Web framework ───────────────────────────────────────────────────────────
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9
+pypdf>=5.0
+pypdf>=5.0
 
 # ── Konfigurasi & validasi ──────────────────────────────────────────────────
 pydantic>=2.7

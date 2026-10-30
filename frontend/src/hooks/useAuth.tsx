@@ -10,6 +10,7 @@ import {
 
 import { ApiError, getErrorMessage, readToken, writeToken } from '@/services/http'
 import { authService } from '@/services/auth'
+import { customersService } from '@/services/customers'
 import type { Customer, CustomerSignInPayload, LoginPayload, RegisterPayload, Role } from '@/types'
 
 /** `status` — the session is being restored from a stored token. */
@@ -28,6 +29,7 @@ export interface AuthContextValue {
   register: (payload: RegisterPayload) => Promise<Customer | null>
   logout: () => void
   refresh: () => Promise<void>
+  updateProfile: (payload: { display_name: string }) => Promise<Customer>
   clearError: () => void
 }
 
@@ -168,6 +170,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [token, logout])
 
+  const updateProfile = useCallback(async (payload: { display_name: string }) => {
+    const updated = await customersService.updateProfile(payload)
+    setCustomer(updated)
+    return updated
+  }, [])
+
   const clearError = useCallback(() => setError(null), [])
 
   const hasRole = useCallback(
@@ -189,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       refresh,
+      updateProfile,
       clearError,
     }),
     [
@@ -202,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       refresh,
+      updateProfile,
       clearError,
     ],
   )

@@ -55,6 +55,7 @@ class PassportIn(ApiModel):
     emergency_notes: str | None = None
     emergency_contact: EmergencyContact | None = None
     avoided_times: list[str] | None = None
+    nutrition_goal: str | None = None
 
     @field_validator("avoided_times")
     @classmethod
@@ -82,6 +83,7 @@ class PassportOut(ApiModel):
     safety_notes: str = ""
     emergency_notes: str = ""
     emergency_contact: EmergencyContact = Field(default_factory=EmergencyContact)
+    nutrition_goal: str = ""
     critical_codes: list[str] = Field(default_factory=list)
     # Kolom legacy `dietary_profile` (string koma) — dipertahankan sebagai
     # fallback baca untuk 3 profil lama yang belum punya passport terstruktur.
@@ -105,6 +107,18 @@ class CustomerOut(ApiModel):
     updated_at: str = ""
 
 
+class CustomerProfilePatch(ApiModel):
+    display_name: str = Field(min_length=2, max_length=120)
+
+    @field_validator("display_name")
+    @classmethod
+    def _valid_display_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Nama minimal 2 karakter.")
+        return value
+
+
 class CustomerAdminOut(CustomerOut):
     order_count: int = 0
     active_order_count: int = 0
@@ -114,22 +128,19 @@ class CustomerAdminOut(CustomerOut):
 
 # ── Auth ────────────────────────────────────────────────────────────────────
 class CustomerSignIn(ApiModel):
-    """Pelanggan cukup mengisi nama lengkap + nomor telepon.
+    """Nomor telepon adalah satu-satunya data wajib untuk pelanggan.
 
     Satu form untuk masuk sekaligus daftar: nomor telepon adalah pengenal unik
     pelanggan. Bila nomor sudah terdaftar → login, bila belum → akun dibuat.
     """
 
-    display_name: str = Field(min_length=1, max_length=120)
+    display_name: str = Field(default="", max_length=120)
     phone: str
 
     @field_validator("display_name")
     @classmethod
     def _valid_name(cls, v: str) -> str:
-        v = (v or "").strip()
-        if len(v) < 1:
-            raise ValueError("nama lengkap wajib diisi")
-        return v
+        return (v or "").strip()
 
     @field_validator("phone")
     @classmethod

@@ -2,8 +2,10 @@ import { http } from './http'
 
 export interface SupplierPOItem {
   id: number
+  ingredient_id?: string | null
   item_name: string
   qty: number
+  received_qty?: number
   unit: string
   unit_price: number
   subtotal: number
@@ -22,6 +24,25 @@ export interface SupplierPO {
   notes?: string
   created_at: string
   items: SupplierPOItem[]
+}
+
+export interface SupplierInvoice {
+  supplier_invoice_id: string
+  supplier_id: string
+  supplier_name?: string
+  invoice_number: string
+  payment_terms: 'PAY_ON_DELIVERY' | 'WEEKLY_INVOICE'
+  period_start?: string | null
+  period_end?: string | null
+  due_date: string
+  amount: number
+  expected_amount: number
+  currency: string
+  match_status: 'MATCHED' | 'REQUIRES_REVIEW'
+  status: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'PARTIALLY_PAID' | 'PAID'
+  notes?: string
+  po_ids: string[]
+  created_at: string
 }
 
 export interface SupplierItem {
@@ -64,6 +85,44 @@ export const supplierService = {
     )
   },
 
+  receivePo(
+    poId: string,
+    data: { lines: Array<{ po_item_id: number; quantity: number; unit: string }>; notes?: string },
+    idempotencyKey: string
+  ) {
+    return http.post<{
+      status: string
+      receipt_id: string
+      po_id: string
+      po_status: string
+      items: Array<Record<string, unknown>>
+    }>(`/supplier/pos/${encodeURIComponent(poId)}/receive`, data, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    })
+  },
+
+  getInvoices(signal?: AbortSignal) {
+    return http.get<SupplierInvoice[]>('/supplier/invoices', { signal })
+  },
+
+  submitInvoice(
+    data: {
+      invoice_number: string
+      payment_terms: 'PAY_ON_DELIVERY' | 'WEEKLY_INVOICE'
+      amount: number
+      due_date: string
+      po_id?: string
+      period_start?: string
+      period_end?: string
+      notes?: string
+    },
+    idempotencyKey: string
+  ) {
+    return http.post<SupplierInvoice>('/supplier/invoices', data, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    })
+  },
+
   getCatalog(supplierId?: string, signal?: AbortSignal) {
     return http.get<SupplierItem[]>('/supplier/catalog', {
       query: supplierId ? { supplier_id: supplierId } : undefined,
@@ -78,6 +137,10 @@ export const supplierService = {
   getDemandForecast(signal?: AbortSignal) {
     return http.get<{
       generated_at: any
+      status?: string
+      data_mode?: string
+      source?: string
+      calculation_version?: string
       materials: any[]
       supplier_7d_forecast: Array<{
         material: string

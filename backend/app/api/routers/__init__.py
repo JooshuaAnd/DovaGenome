@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.routers import admin, ai, auth, catalog, customers, health, kitchen, orders, supplier
+from app.api.routers import admin, ai, auth, catalog, customers, delivery, health, kitchen, orders, payments, supplier, telegram
 
 #: Router publik + privat digabung di satu prefix agar URL konsisten.
 api_router = APIRouter()
@@ -18,9 +18,12 @@ api_router.include_router(auth.router)
 api_router.include_router(catalog.router)
 api_router.include_router(customers.router)
 api_router.include_router(orders.router)
+api_router.include_router(payments.router)
 api_router.include_router(kitchen.router)
 api_router.include_router(admin.router)
 api_router.include_router(supplier.router)
 api_router.include_router(ai.router)
+api_router.include_router(telegram.router)
+api_router.include_router(delivery.router)
 
 __all__ = ["api_router"]

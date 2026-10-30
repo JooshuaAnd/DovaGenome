@@ -6,6 +6,7 @@ import type {
   OrderDetail,
   OrderTimelineEntry,
   OrderUpdatePayload,
+  DeliveryStop,
 } from './types'
 
 export const ordersService = {
@@ -37,5 +38,9 @@ export const ordersService = {
 
   invoice(orderId: string, signal?: AbortSignal) {
     return http.get<Invoice>(`/orders/${encodeURIComponent(orderId)}/invoice`, { signal })
+  },
+
+  deliveryTracking(orderId: string, signal?: AbortSignal) {
+    return http.get<DeliveryStop[]>(`/orders/${encodeURIComponent(orderId)}/delivery`, { signal })
   },
 }

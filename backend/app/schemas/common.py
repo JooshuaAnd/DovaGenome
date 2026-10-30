@@ -40,12 +40,12 @@ class HealthPayload(ApiModel):
     environment: str
     demo_mode: bool
     db_connected: bool
+    supabase_connected: bool = False
+    database_source: str = "supabase_postgres"
+    migration_status: str = "not_checked"
     tables: dict[str, Any] = Field(default_factory=dict)
     credentials: dict[str, bool] = Field(default_factory=dict)
     telegram_bot_username: str = ""
     # Backward-compat alias — beberapa klien masih membaca field ini
     astra_connected: bool = False
-
-    def model_post_init(self, __context: Any) -> None:
-        # Sinkronkan alias agar klien lama tetap benar
-        object.__setattr__(self, "astra_connected", self.db_connected)
+    astra_state: str = "OFFLINE_LEGACY"

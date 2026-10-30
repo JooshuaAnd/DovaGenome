@@ -12,6 +12,7 @@ export interface BrandProps {
   /** Render the whole brand as a link to the customer home. */
   asLink?: boolean
   className?: string
+  tone?: 'forest' | 'red'
 }
 
 const MARK_SIZE: Record<NonNullable<BrandProps['size']>, string> = {
@@ -26,13 +27,13 @@ const MARK_SIZE: Record<NonNullable<BrandProps['size']>, string> = {
  * A single restrained forest mark with a warm gradient edge — the only place
  * in the product where a gradient is allowed, mirroring `theme.py`'s logo.
  */
-export function Brand({ size = 'md', asLink = false, className }: BrandProps) {
+export function Brand({ size = 'md', asLink = false, className, tone = 'forest' }: BrandProps) {
   const content = (
     <span className={cn('flex items-center gap-3', className)}>
       <span
         aria-hidden="true"
         className={cn(
-          'flex shrink-0 items-center justify-center bg-gradient-to-br from-forest-700 via-forest-600 to-gold-600 font-bold text-white',
+          cn('flex shrink-0 items-center justify-center font-bold text-white', tone === 'red' ? 'bg-gradient-to-br from-red-900 via-rose-800 to-amber-500' : 'bg-gradient-to-br from-forest-700 via-forest-600 to-gold-600'),
           MARK_SIZE[size],
         )}
       >
@@ -77,10 +78,14 @@ export interface SidebarNavProps {
   label?: string
   onNavigate?: () => void
   className?: string
+  accent?: 'forest' | 'red'
 }
 
 /** Vertical navigation list shared by the desktop sidebar and the mobile sheet. */
-export function SidebarNav({ items, label, onNavigate, className }: SidebarNavProps) {
+export function SidebarNav({ items, label, onNavigate, className, accent = 'forest' }: SidebarNavProps) {
+  const activeTone = accent === 'red' ? 'bg-rose-50 text-red-900' : 'bg-forest-50 text-forest-700'
+  const hoverTone = accent === 'red' ? 'hover:bg-rose-50/70 hover:text-red-900' : 'hover:bg-forest-50/60 hover:text-forest-700'
+  const iconActiveTone = accent === 'red' ? 'text-red-800' : 'text-forest-600'
   return (
     <nav className={cn('space-y-1', className)} aria-label={label ?? 'Navigasi utama'}>
       {label && <p className="eyebrow px-3 pt-2 pb-1">{label}</p>}
@@ -96,8 +101,8 @@ export function SidebarNav({ items, label, onNavigate, className }: SidebarNavPr
               'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               isActive
-                ? 'bg-forest-50 text-forest-700'
-                : 'text-ink-soft hover:bg-forest-50/60 hover:text-forest-700',
+                ? activeTone
+                : cn('text-ink-soft', hoverTone),
             )
           }
         >
@@ -107,7 +112,7 @@ export function SidebarNav({ items, label, onNavigate, className }: SidebarNavPr
                 aria-hidden="true"
                 className={cn(
                   'size-4 shrink-0',
-                  isActive ? 'text-forest-600' : 'text-muted-text group-hover:text-forest-600',
+                  isActive ? iconActiveTone : cn('text-muted-text', accent === 'red' ? 'group-hover:text-red-800' : 'group-hover:text-forest-600'),
                 )}
               />
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -126,23 +131,24 @@ export interface SidebarProps {
   footer?: React.ReactNode
   label?: string
   className?: string
+  accent?: 'forest' | 'red'
 }
 
 /**
  * Desktop sidebar: brand block, navigation, and an optional footer pinned to
  * the bottom. Deliberately flat — no nested card stacks.
  */
-export function Sidebar({ items, footer, label, className }: SidebarProps) {
+export function Sidebar({ items, footer, label, className, accent = 'forest' }: SidebarProps) {
   return (
     <div className={cn('flex h-full flex-col border-r border-line bg-sidebar', className)}>
       <div className="px-5 py-5">
-        <Brand size="md" asLink />
+      <Brand size="md" asLink tone={accent} />
       </div>
 
       <Separator />
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        <SidebarNav items={items} label={label} />
+        <SidebarNav items={items} label={label} accent={accent} />
       </div>
 
       {footer && (

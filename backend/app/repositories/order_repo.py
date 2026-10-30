@@ -85,23 +85,34 @@ def scheduled_days(doc: dict[str, Any]) -> list[str]:
     return [d for d in DAYS if d in picked]
 
 
-def order_selections(doc: dict[str, Any]) -> list[dict[str, str]]:
+def order_selections(doc: dict[str, Any]) -> list[dict[str, Any]]:
     raw = doc.get("menu_selections") or []
     if not isinstance(raw, list):
         return []
-    out: list[dict[str, str]] = []
-    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
     for item in raw:
         if not isinstance(item, dict):
             continue
         day = str(item.get("hari") or "").strip()
         menu_id = str(item.get("menu_id") or "").strip()
-        if day not in DAYS or not menu_id or day in seen:
+        if day not in DAYS or not menu_id:
             continue
-        seen.add(day)
-        out.append({"hari": day, "menu_id": menu_id})
+        try:
+            quantity = max(1, int(item.get("quantity") or 1))
+        except (TypeError, ValueError):
+            quantity = 1
+        meal_slot = str(item.get("meal_slot") or "lunch")
+        if meal_slot not in {"breakfast", "lunch", "dinner"}:
+            meal_slot = "lunch"
+        out.append({
+            "hari": day,
+            "menu_id": menu_id,
+            "quantity": quantity,
+            "meal_slot": meal_slot,
+        })
     order = {d: i for i, d in enumerate(DAYS)}
-    return sorted(out, key=lambda s: order.get(s["hari"], 99))
+    slot_order = {"breakfast": 0, "lunch": 1, "dinner": 2}
+    return sorted(out, key=lambda s: (order.get(s["hari"], 99), slot_order[s["meal_slot"]]))
 
 
 def selection_map(doc: dict[str, Any]) -> dict[str, str]:
@@ -195,20 +206,53 @@ def normalize_order(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fetch_order_items(order_ids: list[str]) -> list[dict[str, Any]]:
+    if not order_ids:
+        return []
+    try:
+        rows = db.execute(
+            f"""
+            SELECT order_id, hari, menu_id, quantity, unit, meal_slot
+            FROM {TABLE_ORDER_ITEMS}
+            WHERE order_id = ANY(%s)
+            ORDER BY order_id, sort_order
+            """,  # noqa: S608
+            (order_ids,),
+        )
+    except Exception:
+        # Migration 017 is optional during the staged rollout. Historical
+        # order rows remain lunch by definition until the column is present.
+        rows = db.execute(
+            f"""
+            SELECT order_id, hari, menu_id, quantity, unit
+            FROM {TABLE_ORDER_ITEMS}
+            WHERE order_id = ANY(%s)
+            ORDER BY order_id, sort_order
+            """,  # noqa: S608
+            (order_ids,),
+        )
+    for row in rows:
+        row.setdefault("meal_slot", "lunch")
+    return rows
+
+
 def _enrich_order(row: dict[str, Any]) -> dict[str, Any]:
     """
     Tambahkan schedule_days dan menu_selections dari order_items ke dalam row.
 
     Setelah ini row bisa langsung dimasukkan ke normalize_order().
     """
-    items = db.execute(
-        f"SELECT hari, menu_id FROM {TABLE_ORDER_ITEMS} WHERE order_id = %s ORDER BY sort_order",  # noqa: S608
-        (row["order_id"],),
-    )
+    items = _fetch_order_items([str(row["order_id"])])
     row = dict(row)
-    row["schedule_days"] = [r["hari"] for r in items]
+    row["schedule_days"] = [d for d in DAYS if any(r["hari"] == d for r in items)]
     row["menu_selections"] = [
-        {"hari": r["hari"], "menu_id": r["menu_id"]}
+        {
+            "hari": r["hari"],
+            "menu_id": r["menu_id"],
+            "quantity": int(r.get("quantity") or 1),
+            "unit": r.get("unit") or "portion",
+            "meal_slot": r.get("meal_slot") or "lunch",
+        }
         for r in items
         if r.get("menu_id")
     ]
@@ -218,10 +262,44 @@ def _enrich_order(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
+def _enrich_orders(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Bulk-enrich order rows with menu selections in one query.
+
+    The old list path called ``_enrich_order`` once per order, creating an
+    N+1 query pattern that made the admin dashboard timeout on live data.
+    """
+    enriched = [dict(row) for row in rows]
+    order_ids = [str(row.get("order_id") or "") for row in enriched if row.get("order_id")]
+    items_by_order: dict[str, list[dict[str, Any]]] = {}
+    if order_ids:
+        items = _fetch_order_items(order_ids)
+        for item in items:
+            items_by_order.setdefault(str(item.get("order_id") or ""), []).append(item)
+
+    for row in enriched:
+        items = items_by_order.get(str(row.get("order_id") or ""), [])
+        row["schedule_days"] = [d for d in DAYS if any(item["hari"] == d for item in items)]
+        row["menu_selections"] = [
+            {
+                "hari": item["hari"],
+                "menu_id": item["menu_id"],
+                "quantity": int(item.get("quantity") or 1),
+                "unit": item.get("unit") or "portion",
+                "meal_slot": item.get("meal_slot") or "lunch",
+            }
+            for item in items
+            if item.get("menu_id")
+        ]
+        if "id" in row and row["id"] is not None:
+            row["id"] = str(row["id"])
+    return enriched
+
+
 # ── Query ───────────────────────────────────────────────────────────────────
 def fetch_orders(
     *,
     statuses: list[str] | None = None,
+    payment_statuses: list[str] | None = None,
     customer_id: str | None = None,
     chat_id: int | None = None,
     limit: int = 200,
@@ -232,6 +310,9 @@ def fetch_orders(
     if statuses:
         conditions.append("status = ANY(%s)")
         params.append(list(statuses))
+    if payment_statuses:
+        conditions.append("payment_status = ANY(%s)")
+        params.append(list(payment_statuses))
     if customer_id:
         conditions.append("customer_id = %s")
         params.append(customer_id)
@@ -249,7 +330,7 @@ def fetch_orders(
         log.error("Baca orders gagal: %s: %s", type(exc).__name__, exc)
         raise DatabaseError("Gagal membaca daftar pesanan.") from exc
 
-    orders = [normalize_order(_enrich_order(r)) for r in rows]
+    orders = [normalize_order(row) for row in _enrich_orders(rows)]
     orders.sort(key=lambda o: o["created_at"] or "9999")
     return orders
 
@@ -368,22 +449,65 @@ def insert_order(document: dict[str, Any]) -> str:
 
                 # Tulis order_items dari menu_selections (ada menu_id) dan
                 # schedule_days (mungkin tidak ada menu_id)
-                selections: list[dict[str, Any]] = document.get("menu_selections") or []
-                sel_map = {s["hari"]: s.get("menu_id") for s in selections if isinstance(s, dict)}
+                selections: list[dict[str, Any]] = [
+                    s for s in (document.get("menu_selections") or [])
+                    if isinstance(s, dict)
+                ]
 
                 schedule = document.get("schedule_days") or []
                 if isinstance(schedule, str):
                     schedule = split_codes(schedule)
                 days_ordered = [d for d in DAYS if d in set(schedule)]
 
-                for i, hari in enumerate(days_ordered):
-                    cur.execute(
-                        f"""
-                        INSERT INTO {TABLE_ORDER_ITEMS} (order_id, hari, menu_id, sort_order)
-                        VALUES (%s, %s, %s, %s)
-                        """,  # noqa: S608
-                        (order_id, hari, sel_map.get(hari), i),
-                    )
+                lines = sorted(
+                    selections,
+                    key=lambda s: (DAYS.index(str(s.get("hari"))), str(s.get("meal_slot") or "lunch"), str(s.get("menu_id") or "")),
+                )
+                if not lines:
+                    lines = [{"hari": hari, "menu_id": None, "quantity": 1} for hari in days_ordered]
+
+                meal_slot_column = db.has_column(TABLE_ORDER_ITEMS, "meal_slot")
+                for i, line in enumerate(lines):
+                    hari = str(line.get("hari") or "")
+                    if hari not in DAYS:
+                        continue
+                    try:
+                        quantity = max(1, int(line.get("quantity") or 1))
+                    except (TypeError, ValueError):
+                        quantity = 1
+                    if meal_slot_column:
+                        cur.execute(
+                            f"""
+                            INSERT INTO {TABLE_ORDER_ITEMS}
+                                (order_id, hari, menu_id, sort_order, quantity, unit, meal_slot)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """,  # noqa: S608
+                            (
+                                order_id,
+                                hari,
+                                line.get("menu_id"),
+                                i,
+                                quantity,
+                                str(line.get("unit") or "portion"),
+                                str(line.get("meal_slot") or "lunch"),
+                            ),
+                        )
+                    else:
+                        cur.execute(
+                            f"""
+                            INSERT INTO {TABLE_ORDER_ITEMS}
+                                (order_id, hari, menu_id, sort_order, quantity, unit)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            """,  # noqa: S608
+                            (
+                                order_id,
+                                hari,
+                                line.get("menu_id"),
+                                i,
+                                quantity,
+                                str(line.get("unit") or "portion"),
+                            ),
+                        )
             conn.commit()
         return inserted_id
     except Exception as exc:
@@ -400,18 +524,73 @@ def update_fields(doc_id: str, fields: dict[str, Any]) -> dict[str, Any]:
         raise NotFoundError("ID pesanan tidak valid.")
 
     import re as _re
-    safe = {k: v for k, v in fields.items() if _re.match(r"^[a-z_]+$", k)}
-    if not safe:
+    selections = fields.get("menu_selections")
+    safe = {
+        k: v
+        for k, v in fields.items()
+        if k != "menu_selections" and _re.match(r"^[a-z_]+$", k)
+    }
+    if not safe and selections is None:
         return get_order_by_doc_id(doc_id)
 
     safe["updated_at"] = now_iso()
     set_clause = ", ".join(f"{k} = %s" for k in safe)
     values = tuple(safe.values()) + (doc_id,)
     try:
-        db.execute_write(
-            f"UPDATE {TABLE_ORDERS} SET {set_clause} WHERE id = %s",  # noqa: S608
-            values,
-        )
+        if selections is None:
+            db.execute_write(
+                f"UPDATE {TABLE_ORDERS} SET {set_clause} WHERE id = %s",  # noqa: S608
+                values,
+            )
+        else:
+            meal_slot_column = db.has_column(TABLE_ORDER_ITEMS, "meal_slot")
+            with db.get_conn() as conn:
+                with conn.cursor() as cur:
+                    if safe:
+                        cur.execute(
+                            f"UPDATE {TABLE_ORDERS} SET {set_clause} WHERE id = %s",  # noqa: S608
+                            values,
+                        )
+                    cur.execute(
+                        f"SELECT order_id FROM {TABLE_ORDERS} WHERE id = %s FOR UPDATE",  # noqa: S608
+                        (doc_id,),
+                    )
+                    order_row = cur.fetchone()
+                    if not order_row:
+                        raise NotFoundError("Pesanan tidak ditemukan.")
+                    cur.execute(
+                        f"DELETE FROM {TABLE_ORDER_ITEMS} WHERE order_id = %s",  # noqa: S608
+                        (order_row["order_id"],),
+                    )
+                    for index, line in enumerate(selections or []):
+                        if not isinstance(line, dict) or str(line.get("hari") or "") not in DAYS:
+                            continue
+                        params = (
+                            order_row["order_id"],
+                            str(line["hari"]),
+                            line.get("menu_id"),
+                            index,
+                            max(1, int(line.get("quantity") or 1)),
+                            str(line.get("unit") or "portion"),
+                        )
+                        if meal_slot_column:
+                            cur.execute(
+                                f"""
+                                INSERT INTO {TABLE_ORDER_ITEMS}
+                                    (order_id, hari, menu_id, sort_order, quantity, unit, meal_slot)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """,  # noqa: S608
+                                (*params, str(line.get("meal_slot") or "lunch")),
+                            )
+                        else:
+                            cur.execute(
+                                f"""
+                                INSERT INTO {TABLE_ORDER_ITEMS}
+                                    (order_id, hari, menu_id, sort_order, quantity, unit)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                                """,  # noqa: S608
+                                params,
+                            )
     except Exception as exc:
         log.error("Update order %s gagal: %s: %s", doc_id, type(exc).__name__, exc)
         raise DatabaseError("Gagal menyimpan perubahan pesanan.") from exc
@@ -505,4 +684,4 @@ def fetch_orders_between(start_iso: str, end_iso: str, *, limit: int = 1000) -> 
     except Exception as exc:
         log.warning("Fetch rentang order gagal: %s", type(exc).__name__)
         return []
-    return [normalize_order(_enrich_order(r)) for r in rows]
+    return [normalize_order(row) for row in _enrich_orders(rows)]

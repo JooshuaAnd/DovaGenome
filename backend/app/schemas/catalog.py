@@ -84,6 +84,8 @@ class MenuIngredient(ApiModel):
     sumber: str = ""
     potensi_alergen: str = ""
     is_critical_allergen: bool = False
+    ingredient_id: str = ""
+    verification_status: str = "UNVERIFIED"
 
 
 class MenuOut(ApiModel):
@@ -109,6 +111,10 @@ class MenuOut(ApiModel):
     package_codes: list[str] = Field(default_factory=list)
     #: Urutan pilihan di dalam satu hari (0 = utama).
     option_index: int = 0
+    recipe_version_id: str = ""
+    recipe_verification_status: str = "UNVERIFIED"
+    recipe_cross_contact_risk: str = "UNKNOWN"
+    recipe_has_unresolved_components: bool = True
 
     def available_for(self, package_code: str) -> bool:
         """Ketersediaan paket. Aturan tunggal, dipakai backend maupun UI."""

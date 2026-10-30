@@ -260,11 +260,18 @@ def demo_orders() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Koneksi Astra DB
+# Legacy Astra connector (disabled by default; FastAPI/Supabase is active)
 # ---------------------------------------------------------------------------
 
 def connect_db(endpoint: str | None = None, token: str | None = None):
-    """Buka koneksi Astra DB. Kembalikan objek database atau None."""
+    """Return the legacy Astra connector only when explicitly opted in.
+
+    The active application path is Supabase through FastAPI.  Keeping this
+    guard prevents a stale Astra credential from silently becoming a second
+    source of truth in old scripts.
+    """
+    if os.getenv("LEGACY_ASTRA_ENABLED", "").strip().lower() not in {"1", "true", "yes"}:
+        return None
     endpoint = endpoint or os.getenv("ASTRA_DB_API_ENDPOINT", "")
     token    = token or os.getenv("ASTRA_DB_APPLICATION_TOKEN", "")
     if not endpoint or not token:

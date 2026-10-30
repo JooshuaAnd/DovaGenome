@@ -20,6 +20,7 @@ const DOT_TONE: Record<SafetyLevel, string> = {
   safe: 'bg-safe-strong',
   caution: 'bg-caution-strong',
   blocked: 'bg-blocked-strong',
+  requires_verification: 'bg-caution-strong',
 }
 
 /**

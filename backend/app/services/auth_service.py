@@ -114,7 +114,7 @@ def register_customer(payload: RegisterIn) -> TokenOut:
 
 
 def sign_in_customer(payload: CustomerSignIn) -> TokenOut:
-    """Masuk / daftar pelanggan hanya dengan nama lengkap + nomor telepon.
+    """Masuk / daftar pelanggan cukup dengan nomor telepon.
 
     Nomor telepon adalah pengenal unik: bila sudah terdaftar → login, bila belum
     → akun pelanggan baru dibuat. Tidak ada kata sandi (MVP), dan pelanggan bisa
@@ -137,7 +137,7 @@ def sign_in_customer(payload: CustomerSignIn) -> TokenOut:
     else:
         doc = customer_repo.create_customer(
             username=username_from_phone(phone),
-            display_name=payload.display_name,
+            display_name=payload.display_name or "Pelanggan",
             phone=phone,
             role=Role.CUSTOMER.value,
         )

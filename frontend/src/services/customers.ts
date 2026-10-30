@@ -6,6 +6,10 @@ export const customersService = {
     return http.get<Customer>('/customers/me', { signal })
   },
 
+  updateProfile(payload: { display_name: string }) {
+    return http.patch<Customer>('/customers/me', payload)
+  },
+
   getPassport(signal?: AbortSignal) {
     return http.get<Passport>('/customers/me/passport', { signal })
   },
@@ -87,18 +91,22 @@ export const customersService = {
 
   getRfm(customerId?: string, signal?: AbortSignal) {
     return http.get<{
+      status: string
+      data_mode: string
+      source: string
+      calculation_version: string
       customer_id: string
       segment: string
-      recency_days: number
+      recency_days: number | null
       frequency: number
       monetary: number
-      r_score: number
-      f_score: number
-      m_score: number
-      rfm_score: string
+      r_score: number | null
+      f_score: number | null
+      m_score: number | null
+      rfm_score: string | null
       recommended_action: string
     }>('/customers/rfm', {
-      query: { customer_id: customerId || 'cust_ml_001' },
+      query: customerId ? { customer_id: customerId } : undefined,
       signal,
     })
   },

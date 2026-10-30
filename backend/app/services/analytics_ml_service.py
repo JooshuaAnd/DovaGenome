@@ -12,7 +12,84 @@ from __future__ import annotations
 import datetime
 import math
 from typing import Any
+from app.core.logging import get_logger
+from app.core.errors import DatabaseError
 from app.repositories import supabase
+
+log = get_logger("dova.analytics_ml")
+
+
+def _generate_fallback_rfm_rows() -> list[dict[str, Any]]:
+    """Menghasilkan 54 profil pelanggan realistis untuk klasifikasi RFM bila Supabase offline."""
+    names = [
+        ("Maya Indah", "+6281234567802", 3, 32, 2450000),
+        ("Joshua Pratama", "+6281234567801", 5, 28, 2180000),
+        ("Budi Santoso", "+6281234567803", 6, 26, 1980000),
+        ("Siti Rahmawati", "+6281234567804", 4, 25, 1850000),
+        ("Adit Saputra", "+6281234567821", 7, 24, 1720000),
+        ("Dimas Kusuma", "+6281234567822", 5, 22, 1650000),
+        ("Kevin Hidayat", "+6281234567823", 2, 27, 2050000),
+        ("Rian Wijaya", "+6281234567824", 6, 20, 1580000),
+        ("Fajar Firmansyah", "+6281234567825", 4, 21, 1620000),
+        ("Putri Nugroho", "+6281234567826", 3, 23, 1790000),
+        ("Nadia Wibowo", "+6281234567827", 7, 25, 1890000),
+        ("Sari Permana", "+6281234567828", 5, 20, 1540000),
+        ("Bayu Gunawan", "+6281234567829", 4, 22, 1680000),
+        ("Gita Siregar", "+6281234567830", 6, 24, 1810000),
+        ("Dewi Lestari", "+6281234567806", 12, 18, 1420000),
+        ("Ahmad Fauzi", "+6281234567807", 14, 16, 1280000),
+        ("Rina Anggraini", "+6281234567808", 18, 15, 1150000),
+        ("Hendro Wicaksono", "+6281234567809", 10, 17, 1340000),
+        ("Ratna Sari", "+6281234567810", 15, 14, 1120000),
+        ("Dedi Prasetyo", "+6281234567811", 16, 15, 1190000),
+        ("Fitri Handayani", "+6281234567812", 11, 18, 1380000),
+        ("Eko Purnomo", "+6281234567813", 19, 13, 1050000),
+        ("Sri Wahyuni", "+6281234567814", 13, 16, 1260000),
+        ("Bambang Irawan", "+6281234567815", 17, 15, 1180000),
+        ("Yuni Astuti", "+6281234567816", 12, 17, 1310000),
+        ("Agus Setiawan", "+6281234567817", 14, 14, 1140000),
+        ("Lestari Ningrum", "+6281234567818", 20, 12, 980000),
+        ("Surya Darmawan", "+6281234567819", 15, 15, 1210000),
+        ("Mega Putri", "+6281234567820", 16, 13, 1020000),
+        ("Arif Siregar", "+6281234567831", 18, 14, 1090000),
+        ("Tari Permana", "+6281234567832", 6, 7, 560000),
+        ("Hendra Wibowo", "+6281234567833", 5, 8, 640000),
+        ("Rizky Pratama", "+6281234567834", 4, 6, 490000),
+        ("Annisa Rahma", "+6281234567835", 7, 7, 580000),
+        ("Bagus Hidayat", "+6281234567836", 5, 8, 670000),
+        ("Citra Dewi", "+6281234567837", 6, 6, 510000),
+        ("Doni Kusuma", "+6281234567838", 4, 7, 590000),
+        ("Elisa Putri", "+6281234567839", 7, 8, 680000),
+        ("Farhan Saputra", "+6281234567840", 5, 6, 520000),
+        ("Rudi Hermawan", "+6281234567805", 58, 14, 1150000),
+        ("Gilang Firmansyah", "+6281234567841", 62, 12, 980000),
+        ("Hani Wijaya", "+6281234567842", 55, 15, 1220000),
+        ("Indra Nugroho", "+6281234567843", 68, 11, 890000),
+        ("Joko Gunawan", "+6281234567844", 52, 13, 1060000),
+        ("Kartika Sari", "+6281234567845", 65, 10, 840000),
+        ("Lukman Hidayat", "+6281234567846", 59, 14, 1130000),
+        ("Mira Lestari", "+6281234567847", 85, 3, 270000),
+        ("Nanda Kusuma", "+6281234567848", 92, 2, 180000),
+        ("Oki Pratama", "+6281234567849", 78, 4, 340000),
+        ("Panji Wibowo", "+6281234567850", 88, 3, 260000),
+        ("Qori Rahmawati", "+6281234567851", 95, 2, 175000),
+        ("Reza Firmansyah", "+6281234567852", 2, 1, 95000),
+        ("Sinta Dewi", "+6281234567853", 3, 1, 85000),
+        ("Taufik Hidayat", "+6281234567854", 1, 1, 110000),
+    ]
+    now = datetime.datetime.now(datetime.timezone.utc)
+    rfm_rows = []
+    for idx, (name, phone, recency, freq, monetary) in enumerate(names):
+        last_dt = now - datetime.timedelta(days=recency)
+        rfm_rows.append({
+            "customer_id": f"cust_{idx + 1:03d}",
+            "display_name": name,
+            "phone": phone,
+            "last_order_date": last_dt,
+            "frequency": freq,
+            "monetary": monetary,
+        })
+    return rfm_rows
 
 
 def _percentile(data: list[float], p: float) -> float:
@@ -52,43 +129,71 @@ def _sample_skewness(data: list[float], mean: float, std: float) -> float:
 def calculate_descriptive_statistics() -> dict[str, Any]:
     """
     Menghitung statistik deskriptif dan deteksi outlier (metode IQR)
-    pada 1.000 data transaksi riil dari Supabase, persis seperti lembar Excel SuperMarket Analysis.
+    pada maksimal 1.000 observasi transaksi riil. Nilai yang tidak tercatat
+    dikeluarkan per variabel dan tidak diganti dengan angka buatan.
     """
-    rows = supabase.execute(
-        """
-        SELECT unit_price, quantity, tax_amount, total as sales, cogs, gross_income, rating
-        FROM orders
-        ORDER BY created_at DESC
-        LIMIT 1000
-        """
-    )
+    try:
+        rows = supabase.execute(
+            """
+            SELECT unit_price, quantity, tax_amount, total as sales, cogs, gross_income, rating
+            FROM orders
+            ORDER BY created_at DESC
+            LIMIT 1000
+            """
+        )
+    except Exception as exc:
+        log.warning("Supabase unavailable; descriptive statistics held: %s", type(exc).__name__)
+        return {
+            "status": "UNAVAILABLE",
+            "source": "supabase_postgres",
+            "reason_code": "database_unavailable",
+            "n": 0,
+            "variables": [],
+            "frequency_table": [],
+        }
 
     if not rows:
-        return {"n": 0, "variables": [], "frequency_table": []}
+        return {
+            "status": "UNAVAILABLE",
+            "source": "supabase_postgres",
+            "reason_code": "no_order_observations",
+            "n": 0,
+            "variables": [],
+            "frequency_table": [],
+        }
 
     n_samples = len(rows)
 
-    # Ekstrak array untuk tiap variabel analitik
-    var_map = {
-        "Unit price": [float(r.get("unit_price") or 42000) for r in rows],
-        "Quantity": [float(r.get("quantity") or 1) for r in rows],
-        "Tax 5%": [float(r.get("tax_amount") or 0) for r in rows],
-        "Sales": [float(r.get("sales") or 0) for r in rows],
-        "COGS": [float(r.get("cogs") or 0) for r in rows],
+    # Missing operational values remain missing. Never synthesize prices,
+    # quantities, tax, margin, or ratings into analytics output.
+    def observed(key: str) -> list[float]:
+        return [float(row[key]) for row in rows if row.get(key) is not None]
+
+    var_map: dict[str, list[float]] = {
+        "Unit price": observed("unit_price"),
+        "Quantity": observed("quantity"),
+        "Tax 5%": observed("tax_amount"),
+        "Sales": observed("sales"),
+        "COGS": observed("cogs"),
         "Gross Margin %": [
-            round((float(r.get("gross_income") or 0) / float(r.get("sales") or 1)) * 100, 2)
-            if float(r.get("sales") or 0) > 0 else 0.0
-            for r in rows
+            round(float(row["gross_income"]) / float(row["sales"]) * 100, 2)
+            for row in rows
+            if row.get("gross_income") is not None
+            and row.get("sales") is not None
+            and float(row["sales"]) > 0
         ],
-        "Gross Income": [float(r.get("gross_income") or 0) for r in rows],
-        "Rating": [float(r.get("rating") or 7.0) for r in rows],
+        "Gross Income": observed("gross_income"),
+        "Rating": observed("rating"),
     }
 
     stats_result = []
 
     for var_name, values in var_map.items():
+        if not values:
+            continue
+        variable_n = len(values)
         val_sum = sum(values)
-        mean = val_sum / n_samples
+        mean = val_sum / variable_n
         sorted_vals = sorted(values)
         median = _percentile(values, 0.50)
         std = _sample_std(values, mean)
@@ -110,14 +215,14 @@ def calculate_descriptive_statistics() -> dict[str, Any]:
         cv = round(std / abs(mean), 4) if mean != 0 else 0.0
 
         # SE = Std / sqrt(N)
-        se = round(std / math.sqrt(n_samples), 4) if n_samples > 0 else 0.0
+        se = round(std / math.sqrt(variable_n), 4) if variable_n > 0 else 0.0
 
         # Skewness
         skew = round(_sample_skewness(values, mean, std), 4)
 
         stats_result.append({
             "variable": var_name,
-            "n": n_samples,
+            "n": variable_n,
             "mean": round(mean, 2),
             "median": round(median, 2),
             "std_dev": round(std, 2),
@@ -141,6 +246,17 @@ def calculate_descriptive_statistics() -> dict[str, Any]:
 
     # Distribusi Frekuensi untuk Unit price (10 Kelas Interval)
     unit_prices = var_map["Unit price"]
+    price_n = len(unit_prices)
+    if not unit_prices:
+        return {
+            "status": "UNAVAILABLE",
+            "source": "supabase_postgres",
+            "reason_code": "no_verified_unit_price_observations",
+            "n": n_samples,
+            "variables": stats_result,
+            "frequency_table": [],
+            "warnings": ["Tidak ada harga unit aktual; distribusi frekuensi tidak dihitung."],
+        }
     min_up = min(unit_prices)
     max_up = max(unit_prices)
     step = (max_up - min_up) / 10 if max_up > min_up else 1.0
@@ -151,23 +267,37 @@ def calculate_descriptive_statistics() -> dict[str, Any]:
         low = min_up + i * step
         high = min_up + (i + 1) * step if i < 9 else max_up + 0.01
         count = sum(1 for p in unit_prices if low <= p < high or (i == 9 and p == max_up))
-        proportion = round((count / n_samples) * 100, 1)
+        proportion = round((count / price_n) * 100, 1)
         cumulative += count
         freq_table.append({
             "interval": f"Rp {int(low):,} - Rp {int(high):,}".replace(",", "."),
             "frequency": count,
             "proportion": f"{proportion}%",
-            "cumulative": f"{round((cumulative / n_samples) * 100, 1)}%",
+            "cumulative": f"{round((cumulative / price_n) * 100, 1)}%",
         })
 
     return {
+        "status": "OK",
+        "source": "supabase_postgres",
         "n": n_samples,
         "variables": stats_result,
         "frequency_table": freq_table,
+        "warnings": [
+            f"{name}: {len(rows) - len(values)} nilai kosong tidak dihitung."
+            for name, values in var_map.items()
+            if len(values) < len(rows)
+        ],
     }
 
 
 def calculate_crm_rfm_segments() -> dict[str, Any]:
+    """Backward-compatible name backed by the strict live RFM service."""
+    from app.services.rfm_service import build_rfm_report
+
+    return build_rfm_report()
+
+
+def _legacy_calculate_crm_rfm_segments() -> dict[str, Any]:
     """
     Analisis CRM & Segmentasi RFM (Recency, Frequency, Monetary).
     Mengelompokkan pelanggan ke dalam segmen: Champions, Loyal, Potential, At Risk, Hibernating, New.
@@ -175,22 +305,26 @@ def calculate_crm_rfm_segments() -> dict[str, Any]:
     now = datetime.datetime.now(datetime.timezone.utc)
 
     # Tarik agregasi RFM per pelanggan
-    rfm_rows = supabase.execute(
-        """
-        SELECT c.customer_id, c.display_name, c.phone,
-               MAX(o.created_at) as last_order_date,
-               COUNT(o.id) as frequency,
-               COALESCE(SUM(o.total), 0) as monetary
-        FROM customers c
-        JOIN orders o ON c.customer_id = o.customer_id
-        GROUP BY c.customer_id, c.display_name, c.phone
-        HAVING COUNT(o.id) > 0
-        ORDER BY monetary DESC
-        """
-    )
+    try:
+        rfm_rows = supabase.execute(
+            """
+            SELECT c.customer_id, c.display_name, c.phone,
+                   MAX(o.created_at) as last_order_date,
+                   COUNT(o.id) as frequency,
+                   COALESCE(SUM(o.total), 0) as monetary
+            FROM customers c
+            JOIN orders o ON c.customer_id = o.customer_id
+            GROUP BY c.customer_id, c.display_name, c.phone
+            HAVING COUNT(o.id) > 0
+            ORDER BY monetary DESC
+            """
+        )
+    except Exception as exc:
+        log.warning("Supabase offline, using synthetic RFM rows: %s", exc)
+        rfm_rows = []
 
     if not rfm_rows:
-        return {"customers": [], "segment_counts": {}}
+        rfm_rows = _generate_fallback_rfm_rows()
 
     customers_rfm = []
     segment_counts = {
@@ -291,6 +425,18 @@ def calculate_crm_rfm_segments() -> dict[str, Any]:
 
 
 def calculate_supply_chain_ml_forecast() -> dict[str, Any]:
+    """Reject the legacy synthetic supply-chain facade.
+
+    The old implementation below is retained only as migration reference and
+    must never be reachable from a production caller.
+    """
+    raise DatabaseError(
+        "Supply-chain ML legacy dinonaktifkan; gunakan forecast-backtest live. "
+        "SS/ROP menunggu BOM, lead time, dan inventory terverifikasi."
+    )
+
+
+def _legacy_calculate_supply_chain_ml_forecast() -> dict[str, Any]:
     """
     Supply Chain Machine Learning:
     - Demand Forecasting (Moving Average & Trend Slope)
@@ -299,17 +445,21 @@ def calculate_supply_chain_ml_forecast() -> dict[str, Any]:
     - BOM Explosion & Status Restock Otomatis
     """
     # 1. Hitung konsumsi harian dari 1.000 transaksi
-    daily_sales = supabase.execute(
-        """
-        SELECT DATE(created_at) as tgl, COUNT(*) as meal_units
-        FROM orders
-        GROUP BY DATE(created_at)
-        ORDER BY tgl DESC
-        LIMIT 30
-        """
-    )
+    try:
+        daily_sales = supabase.execute(
+            """
+            SELECT DATE(created_at) as tgl, COUNT(*) as meal_units
+            FROM orders
+            GROUP BY DATE(created_at)
+            ORDER BY tgl DESC
+            LIMIT 30
+            """
+        )
+    except Exception as exc:
+        log.warning("Supabase offline, using fallback daily sales: %s", exc)
+        daily_sales = []
 
-    history_units = [int(r["meal_units"]) for r in daily_sales] if daily_sales else [25, 28, 30, 32, 27, 29, 31]
+    history_units = [int(r["meal_units"]) for r in daily_sales] if daily_sales else [25, 28, 30, 32, 27, 29, 31, 34, 28, 30]
     d_avg = sum(history_units) / len(history_units) if history_units else 28.0
     sigma_d = _sample_std([float(u) for u in history_units], d_avg)
 
@@ -332,7 +482,21 @@ def calculate_supply_chain_ml_forecast() -> dict[str, Any]:
         forecast_next_day = int(round(d_avg))
 
     # 2. Hitung ROP dan Safety Stock per Bahan di Inventory
-    inventory = supabase.execute("SELECT * FROM inventory_stocks ORDER BY status ASC")
+    try:
+        inventory = supabase.execute("SELECT * FROM inventory_stocks ORDER BY status ASC")
+    except Exception as exc:
+        log.warning("Supabase offline, using fallback inventory: %s", exc)
+        inventory = []
+
+    if not inventory:
+        inventory = [
+            {"ingredient_name": "Fillet Dada Ayam Organik", "current_stock": 12.5, "unit": "kg", "status": "AMAN"},
+            {"ingredient_name": "Daging Sapi Has Dalam", "current_stock": 3.2, "unit": "kg", "status": "BUTUH PO"},
+            {"ingredient_name": "Brokoli Organik Segar", "current_stock": 4.0, "unit": "kg", "status": "BUTUH PO"},
+            {"ingredient_name": "Ubi Madu Cilembu", "current_stock": 15.0, "unit": "kg", "status": "AMAN"},
+            {"ingredient_name": "Udang Windu Segar", "current_stock": 1.8, "unit": "kg", "status": "HABIS"},
+            {"ingredient_name": "Salmon Segar Norwegia", "current_stock": 2.0, "unit": "kg", "status": "MENIPIS"},
+        ]
     
     # Z = 1.65 (95% Service Level)
     Z = 1.65
@@ -508,6 +672,13 @@ def get_personalized_recommendations(customer_id: str) -> list[dict[str, Any]]:
 
 
 def calculate_transaction_demand_insights() -> dict[str, Any]:
+    """Reject the legacy synthetic demand-insights facade."""
+    raise DatabaseError(
+        "Demand insights legacy dinonaktifkan; gunakan forecast-backtest live."
+    )
+
+
+def _legacy_calculate_transaction_demand_insights() -> dict[str, Any]:
     """
     Analisis Prediksi Demand Pesanan dari 1.000 Transaksi Riil:
     1. Menu Terlaris (Ranking porsi & revenue).
@@ -517,29 +688,44 @@ def calculate_transaction_demand_insights() -> dict[str, Any]:
     5. Proyeksi Kebutuhan Bahan Baku Supplier 7 Hari ke Depan.
     """
     # 1. Menu Terlaris
-    top_dishes_rows = supabase.execute(
-        """
-        SELECT m.menu_id, m.nama_menu, m.hari,
-               COUNT(oi.id) as total_portions,
-               COALESCE(SUM(oi.subtotal), COUNT(oi.id) * 48000) as total_revenue
-        FROM order_items oi
-        JOIN menus m ON oi.menu_id = m.menu_id
-        GROUP BY m.menu_id, m.nama_menu, m.hari
-        ORDER BY total_portions DESC
-        LIMIT 6
-        """
-    )
-    top_dishes = [
-        {
-            "menu_id": r["menu_id"],
-            "nama_menu": r["nama_menu"],
-            "hari": r["hari"],
-            "total_portions": int(r["total_portions"]),
-            "total_revenue": float(r["total_revenue"]),
-            "share_percentage": round((int(r["total_portions"]) / 1000) * 100, 1),
-        }
-        for r in top_dishes_rows
-    ]
+    try:
+        top_dishes_rows = supabase.execute(
+            """
+            SELECT m.menu_id, m.nama_menu, m.hari,
+                   COUNT(oi.id) as total_portions,
+                   COALESCE(SUM(oi.subtotal), COUNT(oi.id) * 48000) as total_revenue
+            FROM order_items oi
+            JOIN menus m ON oi.menu_id = m.menu_id
+            GROUP BY m.menu_id, m.nama_menu, m.hari
+            ORDER BY total_portions DESC
+            LIMIT 6
+            """
+        )
+    except Exception as exc:
+        log.warning("Supabase offline, using fallback top dishes: %s", exc)
+        top_dishes_rows = []
+
+    if not top_dishes_rows:
+        top_dishes = [
+            {"menu_id": "menu_senin_ayam-rosemary", "nama_menu": "Ayam Panggang Rosemary & Ubi Madu", "hari": "Senin", "total_portions": 116, "total_revenue": 5697000, "share_percentage": 11.6},
+            {"menu_id": "menu_jumat_pasta-fusilli-pesto", "nama_menu": "Pasta Fusilli Ayam Pesto Keju", "hari": "Jumat", "total_portions": 115, "total_revenue": 5642000, "share_percentage": 11.5},
+            {"menu_id": "menu_senin_beef-bulgogi", "nama_menu": "Beef Bulgogi Wijen & Nasi Beras Cokelat", "hari": "Senin", "total_portions": 112, "total_revenue": 5445000, "share_percentage": 11.2},
+            {"menu_id": "menu_kamis_salmon-lemon", "nama_menu": "Salmon Fillet Lemon Herb & Kentang Kukus", "hari": "Kamis", "total_portions": 98, "total_revenue": 5880000, "share_percentage": 9.8},
+            {"menu_id": "menu_selasa_sup-daging-rempah", "nama_menu": "Sup Daging Sapi Jamur Rempah", "hari": "Selasa", "total_portions": 88, "total_revenue": 4312000, "share_percentage": 8.8},
+            {"menu_id": "menu_rabu_ayam-suwir-matah", "nama_menu": "Ayam Suwir Sambal Matah & Urap Sayur", "hari": "Rabu", "total_portions": 84, "total_revenue": 4116000, "share_percentage": 8.4},
+        ]
+    else:
+        top_dishes = [
+            {
+                "menu_id": r["menu_id"],
+                "nama_menu": r["nama_menu"],
+                "hari": r["hari"],
+                "total_portions": int(r["total_portions"]),
+                "total_revenue": float(r["total_revenue"]),
+                "share_percentage": round((int(r["total_portions"]) / 1000) * 100, 1),
+            }
+            for r in top_dishes_rows
+        ]
 
     # 2. Pola Hari Pemesanan (Senin - Minggu)
     # Mapping nama hari bahasa Indonesia
@@ -552,21 +738,38 @@ def calculate_transaction_demand_insights() -> dict[str, Any]:
         "Saturday": "Sabtu",
         "Sunday": "Minggu",
     }
-    dow_rows = supabase.execute(
-        """
-        SELECT 
-            TRIM(TO_CHAR(o.created_at, 'Day')) as day_name_en,
-            COUNT(o.id) as order_count,
-            COALESCE(SUM(o.quantity), COUNT(o.id)) as portion_count,
-            COALESCE(SUM(o.total), 0) as revenue
-        FROM orders o
-        GROUP BY TRIM(TO_CHAR(o.created_at, 'Day'))
-        """
-    )
-    dow_dict = {r["day_name_en"]: r for r in dow_rows}
+    try:
+        dow_rows = supabase.execute(
+            """
+            SELECT 
+                TRIM(TO_CHAR(o.created_at, 'Day')) as day_name_en,
+                COUNT(o.id) as order_count,
+                COALESCE(SUM(o.quantity), COUNT(o.id)) as portion_count,
+                COALESCE(SUM(o.total), 0) as revenue
+            FROM orders o
+            GROUP BY TRIM(TO_CHAR(o.created_at, 'Day'))
+            """
+        )
+    except Exception as exc:
+        log.warning("Supabase offline, using fallback DOW stats: %s", exc)
+        dow_rows = []
+
+    if not dow_rows:
+        dow_dict = {
+            "Monday": {"order_count": 168, "portion_count": 245, "revenue": 11760000},
+            "Tuesday": {"order_count": 142, "portion_count": 198, "revenue": 9504000},
+            "Wednesday": {"order_count": 155, "portion_count": 215, "revenue": 10320000},
+            "Thursday": {"order_count": 139, "portion_count": 192, "revenue": 9216000},
+            "Friday": {"order_count": 196, "portion_count": 285, "revenue": 13680000},
+            "Saturday": {"order_count": 118, "portion_count": 160, "revenue": 7680000},
+            "Sunday": {"order_count": 82, "portion_count": 110, "revenue": 5280000},
+        }
+    else:
+        dow_dict = {r["day_name_en"]: r for r in dow_rows}
+
     ordered_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     day_stats = []
-    total_all_orders = sum(int(r.get("order_count", 0)) for r in dow_rows) or 1000
+    total_all_orders = sum(int(r.get("order_count", 0)) for r in (dow_dict.values() if not dow_rows else dow_rows)) or 1000
 
     peak_day_name = "Jumat"
     max_day_orders = 0
@@ -587,29 +790,43 @@ def calculate_transaction_demand_insights() -> dict[str, Any]:
         })
 
     # 3. Tren Bulanan
-    month_rows = supabase.execute(
-        """
-        SELECT 
-            TO_CHAR(o.created_at, 'YYYY-MM') as month_key,
-            TO_CHAR(o.created_at, 'Mon YYYY') as month_label,
-            COUNT(o.id) as order_count,
-            COALESCE(SUM(o.total), 0) as total_sales,
-            ROUND(AVG(COALESCE(o.rating, 4.8)), 2) as avg_rating
-        FROM orders o
-        GROUP BY TO_CHAR(o.created_at, 'YYYY-MM'), TO_CHAR(o.created_at, 'Mon YYYY')
-        ORDER BY month_key ASC
-        """
-    )
-    monthly_trends = [
-        {
-            "month_key": r["month_key"],
-            "month_label": r["month_label"].strip(),
-            "order_count": int(r["order_count"]),
-            "total_sales": float(r["total_sales"]),
-            "avg_rating": float(r["avg_rating"]),
-        }
-        for r in month_rows
-    ]
+    try:
+        month_rows = supabase.execute(
+            """
+            SELECT 
+                TO_CHAR(o.created_at, 'YYYY-MM') as month_key,
+                TO_CHAR(o.created_at, 'Mon YYYY') as month_label,
+                COUNT(o.id) as order_count,
+                COALESCE(SUM(o.total), 0) as total_sales,
+                ROUND(AVG(COALESCE(o.rating, 4.8)), 2) as avg_rating
+            FROM orders o
+            GROUP BY TO_CHAR(o.created_at, 'YYYY-MM'), TO_CHAR(o.created_at, 'Mon YYYY')
+            ORDER BY month_key ASC
+            """
+        )
+    except Exception as exc:
+        log.warning("Supabase offline, using fallback monthly trends: %s", exc)
+        month_rows = []
+
+    if not month_rows:
+        monthly_trends = [
+            {"month_key": "2026-06", "month_label": "Jun 2026", "order_count": 180, "total_sales": 17800000, "avg_rating": 7.3},
+            {"month_key": "2026-07", "month_label": "Jul 2026", "order_count": 210, "total_sales": 20900000, "avg_rating": 7.4},
+            {"month_key": "2026-08", "month_label": "Aug 2026", "order_count": 235, "total_sales": 23450000, "avg_rating": 7.2},
+            {"month_key": "2026-09", "month_label": "Sep 2026", "order_count": 245, "total_sales": 24650000, "avg_rating": 7.5},
+            {"month_key": "2026-10", "month_label": "Oct 2026", "order_count": 130, "total_sales": 13094000, "avg_rating": 7.6},
+        ]
+    else:
+        monthly_trends = [
+            {
+                "month_key": r["month_key"],
+                "month_label": r["month_label"].strip(),
+                "order_count": int(r["order_count"]),
+                "total_sales": float(r["total_sales"]),
+                "avg_rating": float(r["avg_rating"]),
+            }
+            for r in month_rows
+        ]
 
     # 4. Rekomendasi Menu AI Harian untuk Dapur (Daily Menu Planning)
     # AI menganalisis menu terbaik per hari dan memprediksi target porsi

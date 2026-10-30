@@ -18,6 +18,7 @@ export function worstLevel(levels: Array<SafetyLevel | undefined>): SafetyLevel 
   const present = levels.filter((level): level is SafetyLevel => Boolean(level))
   if (present.length === 0) return null
   if (present.includes('blocked')) return 'blocked'
+  if (present.includes('requires_verification')) return 'requires_verification'
   if (present.includes('caution')) return 'caution'
   return 'safe'
 }

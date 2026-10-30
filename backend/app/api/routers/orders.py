@@ -15,6 +15,7 @@ from app.schemas.order import (
     OrderUpdateIn,
 )
 from app.services import order_service
+from app.services import delivery_service
 
 log = get_logger("dova.api.orders")
 
@@ -88,3 +89,10 @@ def invoice(
     Harga tidak pernah berasal dari input pelanggan.
     """
     return order_service.get_invoice(order_id, customer)
+
+
+@router.get("/{order_id}/delivery", summary="Tracking status delivery pesanan")
+def delivery_tracking(
+    order_id: str, customer: CustomerOut = Depends(get_current_customer)
+) -> list[dict]:
+    return delivery_service.customer_tracking(order_id=order_id, customer_id=customer.customer_id)

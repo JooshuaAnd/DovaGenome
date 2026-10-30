@@ -14,6 +14,7 @@ menentukan hak akses; semuanya lewat sini supaya tidak ada celah yang terlewat.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -21,6 +22,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.errors import AuthError, PermissionError_
 from app.core.logging import get_logger
 from app.models.enums import Role
+from app.repositories import supplier_repo
 from app.schemas.customer import CustomerOut
 from app.services import auth_service
 
@@ -60,6 +62,35 @@ def require_roles(*roles: Role) -> Callable[[CustomerOut], CustomerOut]:
 #: Shortcut yang sering dipakai router.
 require_admin = require_roles(Role.ADMIN)
 require_staff = require_roles(Role.ADMIN, Role.KITCHEN)
+require_courier = require_roles(Role.COURIER)
+require_delivery_staff = require_roles(Role.ADMIN, Role.KITCHEN, Role.COURIER)
+
+
+@dataclass(frozen=True)
+class SupplierPrincipal:
+    """Authenticated supplier plus server-resolved supplier tenant."""
+
+    customer: CustomerOut
+    supplier_id: str
+    supplier_name: str
+
+
+def require_supplier(
+    customer: CustomerOut = Depends(get_current_customer),
+) -> SupplierPrincipal:
+    """Require a mapped supplier account; never trust supplier_id from the client."""
+    if customer.role != Role.SUPPLIER.value:
+        raise PermissionError_("Bagian ini hanya dapat diakses oleh akun supplier.")
+
+    account = supplier_repo.get_account_for_customer(customer.customer_id)
+    if not account:
+        raise PermissionError_("Akun supplier belum ditautkan ke supplier aktif.")
+
+    return SupplierPrincipal(
+        customer=customer,
+        supplier_id=str(account["supplier_id"]),
+        supplier_name=str(account.get("supplier_name") or ""),
+    )
 
 
 def get_optional_customer(

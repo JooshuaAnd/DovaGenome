@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Bot,
   X,
@@ -14,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { aiService } from '@/services/ai'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
+import { rememberChatPreference } from '@/lib/chatPreferenceMemory'
 
 interface ChatMessage {
   id: string
@@ -25,22 +27,24 @@ interface ChatMessage {
 const QUICK_PROMPTS = [
   'Rekomendasi menu apa yang cocok buat saya?',
   'Menu apa yang paling laris & hari apa paling ramai?',
-  'Apakah Ayam Panggang Rosemary aman dari alergi?',
+  'Cek menu terhadap alergi saya',
   'Bagaimana prediksi demand & menu harian AI?',
 ]
 
 export function DovaChatbot() {
   const { customer } = useAuth()
+  const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const [inputMessage, setInputMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [lastMode, setLastMode] = useState('Menunggu pertanyaan')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome-1',
       sender: 'ai',
-      text: `Halo ${customer?.display_name || 'Kak'}! 👨‍🍳 Saya Chef BOB, asisten katering presisi pribadimu di Dova Kitchen. Mau cari rekomendasi menu yang 100% aman dari alergi, cek menu paling laris, atau tanya prediksi tren pesanan minggu ini? Tanya ke Chef BOB yuk!`,
+      text: `Halo ${customer?.display_name || 'Kak'}! 👋 Saya Chef BOB, asisten menu Dova Kitchen. Tanyakan tentang menu atau alergi; saya akan merujuk ke katalog dan memberi tahu bila resep belum bisa diverifikasi.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ])
@@ -72,24 +76,40 @@ export function DovaChatbot() {
         session_id: customer?.customer_id || `guest-${Date.now()}`,
         context: {
           customer_name: customer?.display_name || customer?.username || 'Pelanggan',
+          conversation_history: rememberChatPreference(customer?.customer_id || 'guest', text),
         },
       })
+      if (res.reason_code === 'structured_preference_saved' || res.reason_code === 'structured_allergen_saved') {
+        window.dispatchEvent(new Event('dova:passport-updated'))
+      }
 
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
-        text: res.reply || 'Maaf, saya tidak dapat memahami pertanyaan tersebut. Bisa ulangi kembali?',
+        text: res.degraded
+          ? `${res.reply || 'Layanan AI belum tersedia.'}\n\nStatus: ${
+              res.message || 'degraded; sumber AI perlu diverifikasi'
+            }`
+          : res.reply || 'Maaf, saya tidak dapat memahami pertanyaan tersebut. Bisa ulangi kembali?',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
+      setLastMode(res.degraded
+        ? res.provider === 'catalog_safety'
+          ? 'Cek bahan · katalog live'
+          : res.provider === 'catalog_preferences'
+            ? 'Filter selera · katalog live'
+            : 'AI sedang terbatas'
+        : 'Siap menjawab')
       setMessages((prev) => [...prev, aiMsg])
     } catch {
       const fallbackMsg: ChatMessage = {
         id: `ai-err-${Date.now()}`,
         sender: 'ai',
-        text: 'Halo! Chef BOB di Dova Kitchen selalu memastikan hidangan sehatmu bebas dari risiko kontaminasi alergi. Silakan langsung pilih menu harian favoritmu!',
+        text: 'Chef BOB sedang tidak tersedia. Silakan coba lagi beberapa saat atau pilih menu setelah status AI kembali aktif.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
       setMessages((prev) => [...prev, fallbackMsg])
+      setLastMode('Layanan AI tidak tersedia')
     } finally {
       setIsLoading(false)
     }
@@ -105,8 +125,8 @@ export function DovaChatbot() {
           className={cn(
             'group relative flex items-center gap-2.5 rounded-full px-4 py-3 shadow-xl transition-all duration-300 hover:scale-105 active:scale-95',
             isOpen
-              ? 'bg-slate-800 text-white'
-              : 'bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white shadow-rose-600/30'
+              ? 'bg-[#4b1720] text-white'
+              : 'bg-gradient-to-r from-[#42151d] via-[#7e2933] to-[#a7353d] text-white shadow-rose-950/30'
           )}
           aria-label="Tanya Chef BOB"
         >
@@ -118,9 +138,9 @@ export function DovaChatbot() {
           ) : (
             <>
               <div className="relative">
-                <Bot className="size-6 text-white animate-bounce" />
+                <Bot className="size-6 text-white" />
                 <span className="absolute -top-1 -right-1 flex size-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300 opacity-75"></span>
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-amber-300/50"></span>
                   <span className="relative inline-flex size-2.5 rounded-full bg-amber-400"></span>
                 </span>
               </div>
@@ -129,7 +149,7 @@ export function DovaChatbot() {
                   Tanya Chef BOB
                   <Sparkles className="size-3 text-amber-300" />
                 </div>
-                <div className="text-[11px] text-white/80 font-normal leading-none">Online & Cepat</div>
+                <div className="text-[11px] text-white/80 font-normal leading-none">Asisten menu Dova</div>
               </div>
             </>
           )}
@@ -138,9 +158,9 @@ export function DovaChatbot() {
 
       {/* Chat Window Dialog */}
       {isOpen && (
-        <div className="fixed inset-x-2 bottom-36 z-50 max-h-[80vh] sm:inset-x-auto sm:right-6 sm:bottom-20 sm:w-[420px] rounded-3xl bg-white shadow-2xl border border-stone-200 overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-5 duration-300">
+        <div className="fixed left-3 right-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-50 flex h-[min(720px,calc(100dvh-8rem))] flex-col overflow-hidden rounded-3xl border border-[#ead9d0] bg-[#fffdfb] shadow-2xl animate-in fade-in slide-in-from-bottom-5 duration-300 sm:left-auto sm:right-6 sm:bottom-20 sm:w-[min(420px,calc(100vw-3rem))]">
           {/* Header */}
-          <div className="bg-gradient-to-r from-red-600 to-rose-700 p-4 text-white flex items-center justify-between shadow-md">
+          <div className="bg-[radial-gradient(circle_at_80%_0%,rgba(246,198,167,.25),transparent_40%),linear-gradient(120deg,#3c1018,#8a2833)] p-4 text-white flex items-center justify-between shadow-md">
             <div className="flex items-center gap-3">
               <div className="relative flex size-11 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-md border border-white/20">
                 <Utensils className="size-5 text-amber-300" />
@@ -153,7 +173,7 @@ export function DovaChatbot() {
                     AI Precision Chef
                   </Badge>
                 </h3>
-                <p className="text-xs text-white/80">Katering Presisi • Siap Konsultasi</p>
+                <p className="text-xs text-white/80">Katering Presisi • {lastMode}</p>
               </div>
             </div>
             <button
@@ -164,14 +184,34 @@ export function DovaChatbot() {
             </button>
           </div>
 
+          <div className="grid grid-cols-3 gap-2 border-b border-[#ead9d0] bg-[#fffdfb] p-3">
+            {[
+              { label: 'Lihat menu', path: '/order' },
+              { label: 'Passport', path: '/passport' },
+              { label: 'Pesanan', path: '/orders' },
+            ].map((action) => (
+              <button
+                key={action.path}
+                type="button"
+                onClick={() => {
+                  setIsOpen(false)
+                  navigate(action.path)
+                }}
+                className="rounded-xl border border-[#ead9d0] bg-[#fff8f2] px-2 py-2 text-[11px] font-bold text-[#513b36] transition hover:border-[#c55a50] hover:bg-[#f8e6df] hover:text-[#7e2933]"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+
           {/* Quick Prompts Carousel */}
-          <div className="bg-stone-50/90 border-b border-stone-200/80 px-3 py-2 overflow-x-auto no-scrollbar flex gap-2">
+          <div className="flex gap-2 overflow-x-auto border-b border-[#ead9d0] bg-[#fff8f2] px-3 py-2 no-scrollbar">
             {QUICK_PROMPTS.map((prompt, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSendMessage(prompt)}
                 disabled={isLoading}
-                className="whitespace-nowrap text-xs bg-white text-stone-700 hover:text-rose-600 hover:border-rose-300 border border-stone-200 rounded-full px-3 py-1 transition-all flex items-center gap-1 shadow-2xs active:scale-95"
+                className="flex items-center gap-1 whitespace-nowrap rounded-full border border-[#ead9d0] bg-white px-3 py-1 text-xs text-[#513b36] shadow-sm transition-all hover:border-[#c55a50] hover:text-[#7e2933] active:scale-95"
               >
                 <span>{prompt}</span>
                 <ChevronRight className="size-3 text-stone-400" />
@@ -180,7 +220,7 @@ export function DovaChatbot() {
           </div>
 
           {/* Message History */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 max-h-[380px] bg-stone-50/40">
+          <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto bg-[#fffdfb] p-4">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -190,8 +230,8 @@ export function DovaChatbot() {
                   className={cn(
                     'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-2xs',
                     msg.sender === 'user'
-                      ? 'bg-rose-600 text-white rounded-tr-xs'
-                      : 'bg-white text-stone-800 border border-stone-200/90 rounded-tl-xs whitespace-pre-line'
+                      ? 'bg-[#9f2735] text-white rounded-tr-xs'
+                      : 'bg-white text-[#392a27] border border-[#ead9d0] rounded-tl-xs whitespace-pre-line'
                   )}
                 >
                   {msg.text}
@@ -202,7 +242,7 @@ export function DovaChatbot() {
 
             {isLoading && (
               <div className="flex items-center gap-2 text-stone-500 bg-white border border-stone-200 rounded-2xl px-4 py-2.5 text-xs w-fit">
-                <RefreshCw className="size-3.5 animate-spin text-rose-500" />
+                <RefreshCw className="size-3.5 animate-spin text-[#9f2735]" />
                 <span>AI Chef sedang menganalisis menu & bahan...</span>
               </div>
             )}
@@ -215,20 +255,20 @@ export function DovaChatbot() {
               e.preventDefault()
               handleSendMessage()
             }}
-            className="p-3 bg-white border-t border-stone-200 flex items-center gap-2"
+              className="flex items-center gap-2 border-t border-[#ead9d0] bg-[#fffdfb] p-3"
           >
             <Input
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               placeholder="Tanya alergi, menu, atau nutrisi..."
-              className="flex-1 rounded-full border-stone-300 bg-stone-50/80 px-4 text-sm focus-visible:ring-rose-500"
+              className="flex-1 rounded-full border-[#ead9d0] bg-[#fff8f2] px-4 text-sm focus-visible:ring-rose-500"
               disabled={isLoading}
             />
             <Button
               type="submit"
               size="icon"
               disabled={!inputMessage.trim() || isLoading}
-              className="rounded-full bg-rose-600 hover:bg-rose-700 text-white size-10 shrink-0 shadow-md shadow-rose-600/20"
+              className="size-10 shrink-0 rounded-full bg-[#8f2833] text-white shadow-md shadow-rose-900/20 hover:bg-[#711f2b]"
             >
               <Send className="size-4" />
             </Button>

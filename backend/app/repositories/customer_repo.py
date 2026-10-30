@@ -407,6 +407,7 @@ def _empty_passport() -> dict[str, Any]:
         "safety_notes": "",
         "emergency_notes": "",
         "emergency_contact": {},
+        "nutrition_goal": "",
         "legacy_dietary_profile": "",
         "structured": False,
         "updated_at": "",
@@ -494,6 +495,7 @@ def get_passport(customer_id: str) -> PassportOut:
         safety_notes=str(row.get("safety_notes") or ""),
         emergency_notes=str(row.get("emergency_notes") or ""),
         emergency_contact=EmergencyContact(**ec_raw) if isinstance(ec_raw, dict) else EmergencyContact(),
+        nutrition_goal=str(row.get("nutrition_goal") or ""),
         critical_codes=critical_codes,
         legacy_dietary_profile=str(row.get("legacy_dietary_profile") or ""),
         structured=bool(row.get("structured", False)),
@@ -549,6 +551,8 @@ def save_passport(customer_id: str, payload: PassportIn) -> PassportOut:
         "emergency_notes":  payload.emergency_notes  if payload.emergency_notes  is not None else str(existing.get("emergency_notes") or ""),
         "emergency_contact": _json.dumps(payload.emergency_contact.model_dump()) if payload.emergency_contact is not None
                              else (_json.dumps(existing.get("emergency_contact") or {}) if isinstance(existing.get("emergency_contact"), dict) else (existing.get("emergency_contact") or "{}")),
+        "nutrition_goal": payload.nutrition_goal if payload.nutrition_goal is not None
+                          else str(existing.get("nutrition_goal") or ""),
         "structured": True,
         "updated_at": now_iso(),
     }

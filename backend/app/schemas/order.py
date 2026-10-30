@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, field_validator
 
 from app.core.domain import DAYS, normalize_allergen_code, split_codes
@@ -71,16 +73,21 @@ class SafetyReportOut(ApiModel):
 
 
 # ── Order ───────────────────────────────────────────────────────────────────
+MealSlot = Literal["breakfast", "lunch", "dinner"]
+
+
 class DaySelectionIn(ApiModel):
     """
-    Satu hari layanan + opsi menu yang dipilih untuk hari itu.
+    Satu baris menu + jumlah porsi yang dipilih untuk satu hari layanan.
 
-    Inilah yang membedakan "catering mingguan" dari "satu menu untuk semua hari":
-    pelanggan memilih satu dari banyak opsi, untuk setiap hari yang dilayani.
+    Satu hari boleh memiliki beberapa baris menu; pelanggan bebas menentukan
+    kombinasi menu dan jumlah porsinya.
     """
 
     hari: str
     menu_id: str = Field(min_length=1, max_length=120)
+    quantity: int = Field(default=1, ge=1, le=1000)
+    meal_slot: MealSlot = "lunch"
 
     @field_validator("hari")
     @classmethod
@@ -95,6 +102,8 @@ class OrderSelectionOut(ApiModel):
 
     hari: str
     menu_id: str = ""
+    quantity: int = Field(default=1, ge=1)
+    meal_slot: MealSlot = "lunch"
     service_date: str = ""
     date_label: str = ""
     nama_menu: str = ""
@@ -144,16 +153,11 @@ class OrderCreateIn(ApiModel):
 
     @field_validator("selections")
     @classmethod
-    def _unique_days(cls, v: list[DaySelectionIn] | None) -> list[DaySelectionIn] | None:
-        """Satu hari hanya boleh punya satu pilihan — duplikat ditolak, bukan diam."""
+    def _sort_selections(cls, v: list[DaySelectionIn] | None) -> list[DaySelectionIn] | None:
+        """Urutkan baris menu tanpa membatasi beberapa pilihan pada hari yang sama."""
         if v is None:
             return None
-        seen: set[str] = set()
-        for item in v:
-            if item.hari in seen:
-                raise ValueError(f"hari '{item.hari}' dipilih lebih dari sekali")
-            seen.add(item.hari)
-        # Urut sesuai kalender layanan supaya(order tersimpan rapi.
+        # Urut sesuai kalender layanan supaya order tersimpan rapi.
         return sorted(v, key=lambda s: DAYS.index(s.hari))
 
 

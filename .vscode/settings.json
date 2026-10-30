@@ -4,5 +4,6 @@
   ],
   "python.autoComplete.extraPaths": [
     "./backend"
-  ]
+  ],
+  "python.terminal.useEnvFile": true
 }

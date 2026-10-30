@@ -1,8 +1,7 @@
-import { useState, type ReactNode } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LogOut,
-  Menu as MenuIcon,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -12,9 +11,15 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { DovaChatbot } from '@/components/chat/DovaChatbot'
+import { DietaryPassportModal } from '@/components/passport/DietaryPassportModal'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useAuth } from '@/hooks/useAuth'
+import { useApi } from '@/hooks/useApi'
 import { cn } from '@/lib/utils'
+import { clearChatPreferences } from '@/lib/chatPreferenceMemory'
+import { catalogService } from '@/services/catalog'
+import { customersService } from '@/services/customers'
+import type { Allergen, Passport } from '@/types'
 
 interface PortalLayoutProps {
   children: ReactNode
@@ -22,33 +27,80 @@ interface PortalLayoutProps {
 }
 
 export function PortalLayout({ children, title }: PortalLayoutProps) {
-  const { customer, isAuthenticated, logout } = useAuth()
+  const { customer, isAuthenticated, logout, updateProfile } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const standaloneOrder = ['/', '/order', '/menu'].includes(location.pathname)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isPassportOpen, setIsPassportOpen] = useState(false)
+
+  const passportQuery = useApi<Passport>(
+    (signal) => customersService.getPassport(signal),
+    { enabled: isAuthenticated },
+  )
+  const allergenQuery = useApi<Allergen[]>((signal) => catalogService.listAllergens(signal))
+
+  useEffect(() => {
+    if (!isAuthenticated || !customer || !passportQuery.data) return
+    const seenKey = `dova_dietary_onboarding_seen_${customer.customer_id}`
+    if (!passportQuery.data.structured && !sessionStorage.getItem(seenKey)) {
+      setIsPassportOpen(true)
+    }
+  }, [customer, isAuthenticated, passportQuery.data])
+
+  useEffect(() => {
+    const refresh = () => {
+      if (customer?.customer_id) clearChatPreferences(customer.customer_id)
+      void passportQuery.refetch()
+    }
+    window.addEventListener('dova:passport-updated', refresh)
+    return () => window.removeEventListener('dova:passport-updated', refresh)
+  }, [customer?.customer_id, passportQuery.refetch])
+
+  function openPassport() {
+    if (!isAuthenticated) {
+      navigate('/login?next=%2Fpassport')
+      return
+    }
+    setIsPassportOpen(true)
+  }
+
+  useEffect(() => {
+    const open = () => setIsPassportOpen(true)
+    window.addEventListener('dova:open-passport', open)
+    return () => window.removeEventListener('dova:open-passport', open)
+  }, [])
+
+  useEffect(() => {
+    if (location.search.includes('passport=1') && isAuthenticated) {
+      setIsPassportOpen(true)
+      navigate('/order', { replace: true })
+    }
+  }, [isAuthenticated, location.search, navigate])
 
   const navItems = [
     { to: '/order', label: 'Menu Mingguan', icon: Utensils },
     { to: '/orders', label: 'Pesanan Saya', icon: ShoppingBag },
-    { to: '/passport', label: 'Dietary Passport', icon: ShieldCheck },
+    { to: '/passport', label: 'Dietary Passport', icon: ShieldCheck, modal: true },
     { to: '/ai', label: 'Asisten AI Chef (BOB)', icon: Sparkles },
   ]
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-stone-900 font-sans flex antialiased selection:bg-rose-500 selection:text-white">
+    <div className="min-h-screen bg-canvas text-ink-soft font-sans flex antialiased selection:bg-gold-500/30 selection:text-forest-900">
       {/* ── Desktop Left Sidebar (Consistent Bitepoint/Dova Theme) ── */}
-      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-stone-200/80 shrink-0 h-screen sticky top-0 justify-between z-20 shadow-2xs">
+      <aside className="hidden">
         <div>
           {/* Brand Logo Header */}
           <div className="p-6 pb-5 flex items-center justify-between border-b border-stone-100">
             <Link to="/" className="flex items-center gap-3">
-              <div className="size-10 rounded-2xl bg-rose-600 flex items-center justify-center text-white font-black shadow-md shadow-rose-600/20 text-lg">
+              <div className="size-10 rounded-2xl bg-forest-900 flex items-center justify-center text-white font-black shadow-md shadow-forest-900/20 text-lg">
                 DK
               </div>
               <div>
                 <span className="font-extrabold text-lg text-stone-900 tracking-tight leading-none block">
                   dovakitchen
                 </span>
-                <span className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider block mt-0.5">
+                <span className="text-[11px] font-semibold text-gold-700 uppercase tracking-wider block mt-0.5">
                   Precision Catering
                 </span>
               </div>
@@ -60,21 +112,33 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
             {navItems.map((item) => {
               const Icon = item.icon
               return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    cn(
-                      'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all',
-                      isActive
-                        ? 'bg-rose-600 text-white font-bold shadow-sm shadow-rose-600/20'
-                        : 'text-stone-700 hover:bg-stone-100 hover:text-stone-900'
-                    )
-                  }
-                >
-                  <Icon className="size-5 shrink-0" />
-                  <span>{item.label}</span>
-                </NavLink>
+                item.modal ? (
+                  <button
+                    key={item.to}
+                    type="button"
+                    onClick={openPassport}
+                    className="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-left text-stone-700 transition-all hover:bg-forest-50 hover:text-forest-900"
+                  >
+                    <Icon className="size-5 shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                ) : (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      cn(
+                        'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all',
+                        isActive
+                          ? 'bg-forest-900 text-white font-bold shadow-sm shadow-forest-900/20'
+                          : 'text-stone-700 hover:bg-forest-50 hover:text-forest-900'
+                      )
+                    }
+                  >
+                    <Icon className="size-5 shrink-0" />
+                    <span>{item.label}</span>
+                  </NavLink>
+                )
               )
             })}
           </nav>
@@ -85,7 +149,7 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
           {isAuthenticated ? (
             <div className="p-3 rounded-2xl bg-stone-50 border border-stone-200/60 flex items-center justify-between">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="size-9 rounded-full bg-rose-100 border border-rose-300 text-rose-900 font-bold flex items-center justify-center text-xs shrink-0">
+                <div className="size-9 rounded-full bg-forest-50 border border-forest-100 text-forest-900 font-bold flex items-center justify-center text-xs shrink-0">
                   {customer?.display_name?.[0] || customer?.username?.[0] || 'P'}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -101,7 +165,7 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
                 type="button"
                 onClick={logout}
                 title="Keluar akun"
-                className="size-8 rounded-xl hover:bg-rose-50 text-stone-400 hover:text-rose-600 flex items-center justify-center transition-colors"
+                className="size-8 rounded-xl hover:bg-forest-50 text-stone-400 hover:text-forest-700 flex items-center justify-center transition-colors"
               >
                 <LogOut className="size-4" />
               </button>
@@ -109,7 +173,7 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
           ) : (
             <Button
               onClick={() => navigate('/login')}
-              className="w-full rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 shadow-md shadow-rose-600/20"
+              className="w-full rounded-2xl bg-forest-900 hover:bg-forest-800 text-white font-bold text-xs py-2.5 shadow-md shadow-forest-900/20"
             >
               Masuk Akun
             </Button>
@@ -118,65 +182,56 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
       </aside>
 
       {/* ── Center Content Column ── */}
-      <div className="flex-1 flex flex-col min-w-0 pb-20 overflow-y-auto">
+      <div className={standaloneOrder ? 'w-full min-w-0' : 'flex-1 flex flex-col min-w-0 pb-20 overflow-y-auto'}>
         {/* Mobile & Tablet Header */}
-        <header className="sticky top-0 z-40 bg-[#FAF7F2]/95 backdrop-blur-md border-b border-stone-200/80 px-4 py-3">
-          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
-            {/* Left: Mobile Drawer Trigger */}
-            <button
-              type="button"
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-stone-900 active:scale-95 transition-all lg:hidden"
-              aria-label="Menu navigasi"
-            >
-              <MenuIcon className="size-5" />
-            </button>
-
+        {!standaloneOrder && <header className="sticky top-0 z-40 bg-canvas/95 backdrop-blur-md border-b border-line px-4 py-3">
+          <div className="w-full max-w-[1600px] mx-auto flex items-center justify-between gap-3">
             {/* Desktop Page Title / Mobile Brand */}
             <div className="flex items-center gap-3">
               <span className="hidden lg:block font-black text-lg text-stone-900">
                 {title || 'Dova Kitchen'}
               </span>
-              <div className="lg:hidden flex items-center gap-1.5 font-black text-rose-600 text-lg tracking-tighter">
+              <div className="lg:hidden flex items-center gap-1.5 font-black text-forest-900 text-lg tracking-tighter">
                 DOVA KITCHEN
-                <span className="inline-block size-1.5 rounded-full bg-rose-600"></span>
+                <span className="inline-block size-1.5 rounded-full bg-gold-600"></span>
               </div>
             </div>
 
             {/* Right: Quick Actions */}
             <div className="flex items-center gap-2">
-              <Link
-                to="/passport"
-                className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-rose-600 active:scale-95 transition-all"
+              <button
+                type="button"
+                onClick={openPassport}
+                className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-forest-700 active:scale-95 transition-all"
                 title="Dietary Passport"
               >
                 <ShieldCheck className="size-5" />
-              </Link>
+              </button>
 
               <Link
                 to="/order"
-                className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-rose-600 active:scale-95 transition-all relative"
+                className="size-10 rounded-full bg-white border border-stone-200 shadow-2xs flex items-center justify-center text-stone-700 hover:text-forest-700 active:scale-95 transition-all relative"
                 title="Pesan Menu"
               >
                 <ShoppingBag className="size-5" />
               </Link>
             </div>
           </div>
-        </header>
+        </header>}
 
         {/* ── Main View Content ── */}
-        <main className="max-w-6xl w-full mx-auto px-4 py-6">
+        <main className={standaloneOrder ? 'w-full' : 'w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6'}>
           {children}
         </main>
       </div>
 
       {/* ── Slide-over Mobile Sheet Drawer ── */}
       <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-        <SheetContent side="left" className="w-72 p-0 bg-white border-r border-stone-200 flex flex-col justify-between">
+        <SheetContent side="left" className="w-72 p-0 bg-surface border-r border-line flex flex-col justify-between">
           <div className="p-6">
             <div className="flex items-center justify-between pb-6 border-b border-stone-100">
-              <div className="flex items-center gap-2.5 font-black text-rose-600 text-lg">
-                <div className="size-8 rounded-xl bg-rose-600 text-white flex items-center justify-center text-sm font-black">
+              <div className="flex items-center gap-2.5 font-black text-forest-900 text-lg">
+                <div className="size-8 rounded-xl bg-forest-900 text-white flex items-center justify-center text-sm font-black">
                   DK
                 </div>
                 DOVA KITCHEN
@@ -193,22 +248,37 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
               {navItems.map((item) => {
                 const Icon = item.icon
                 return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex items-center gap-3.5 p-3 rounded-2xl text-sm font-semibold transition-all',
-                        isActive
-                          ? 'bg-rose-600 text-white font-bold'
-                          : 'text-stone-700 hover:bg-stone-50'
-                      )
-                    }
-                  >
-                    <Icon className="size-5" />
-                    <span>{item.label}</span>
-                  </NavLink>
+                  item.modal ? (
+                    <button
+                      key={item.to}
+                      type="button"
+                      onClick={() => {
+                        setIsMobileMenuOpen(false)
+                        openPassport()
+                      }}
+                      className="flex w-full items-center gap-3.5 rounded-2xl p-3 text-left text-sm font-semibold text-stone-700 transition-all hover:bg-forest-50 hover:text-forest-900"
+                    >
+                      <Icon className="size-5" />
+                      <span>{item.label}</span>
+                    </button>
+                  ) : (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-3.5 p-3 rounded-2xl text-sm font-semibold transition-all',
+                          isActive
+                            ? 'bg-forest-900 text-white font-bold'
+                            : 'text-stone-700 hover:bg-forest-50 hover:text-forest-900'
+                        )
+                      }
+                    >
+                      <Icon className="size-5" />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  )
                 )
               })}
             </nav>
@@ -239,7 +309,7 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
                   setIsMobileMenuOpen(false)
                   navigate('/login')
                 }}
-                className="w-full rounded-2xl bg-rose-600 text-white text-xs font-bold"
+                className="w-full rounded-2xl bg-forest-900 text-white text-xs font-bold"
               >
                 Masuk Akun
               </Button>
@@ -249,51 +319,65 @@ export function PortalLayout({ children, title }: PortalLayoutProps) {
       </Sheet>
 
       {/* ── Sticky Bottom Mobile Navigation Bar ── */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-6 py-2.5">
-        <div className="max-w-md mx-auto flex items-center justify-between">
-          <Link
-            to="/order"
-            className="flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 font-medium text-[11px]"
+      <nav aria-label="Navigasi utama" className="fixed bottom-0 inset-x-0 z-40 border-t border-line bg-surface/95 px-5 py-2.5 backdrop-blur-md">
+        <div className="mx-auto flex max-w-md items-center justify-between">
+          {[
+            { to: '/order', label: 'Menu', icon: Utensils },
+            { to: '/orders', label: 'Pesanan', icon: ShoppingBag },
+            { to: '/ai', label: 'Chef BOB', icon: Sparkles },
+          ].map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} className={({ isActive }) => `flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${isActive || (to === '/order' && location.pathname === '/') ? 'text-forest-900' : 'text-stone-500 hover:text-forest-900'}`}>
+              {({ isActive }) => { const active = isActive || (to === '/order' && location.pathname === '/'); return <><span className={`flex size-8 items-center justify-center rounded-full ${active ? 'bg-rose-50' : ''}`}><Icon className="size-4" /></span><span>{label}</span></> }}
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              if (['/', '/order'].includes(location.pathname)) {
+                window.dispatchEvent(new Event('dova:open-cart'))
+              } else {
+                navigate('/order?openCart=1')
+              }
+            }}
+            className="flex flex-col items-center gap-1 text-[10px] font-bold text-forest-900"
+            aria-label="Buka keranjang"
           >
-            <div className="size-7 flex items-center justify-center">
-              <Utensils className="size-4" />
-            </div>
-            <span>Menu</span>
-          </Link>
-
-          <Link
-            to="/orders"
-            className="flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 font-medium text-[11px]"
-          >
-            <div className="size-7 flex items-center justify-center">
+            <span className="flex size-10 -mt-4 items-center justify-center rounded-full bg-[#8f2833] text-white shadow-lg shadow-[#8f2833]/25">
               <ShoppingBag className="size-4" />
-            </div>
-            <span>Pesanan</span>
-          </Link>
-
-          <Link
-            to="/ai"
-            className="flex flex-col items-center gap-1 text-amber-600 hover:text-amber-700 font-bold text-[11px]"
-          >
-            <div className="size-7 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
-              <Sparkles className="size-4" />
-            </div>
-            <span>AI BOB</span>
-          </Link>
-
-          <Link
-            to="/passport"
-            className="flex flex-col items-center gap-1 text-stone-500 hover:text-stone-900 font-medium text-[11px]"
-          >
-            <div className="size-7 flex items-center justify-center">
-              <ShieldCheck className="size-4" />
-            </div>
-            <span>Passport</span>
-          </Link>
+            </span>
+            <span>Keranjang</span>
+          </button>
+          <button type="button" onClick={openPassport} className="flex flex-col items-center gap-1 text-[11px] font-semibold text-stone-500 hover:text-forest-900">
+            <span className="flex size-8 items-center justify-center"><ShieldCheck className="size-4" /></span><span>Profil</span>
+          </button>
         </div>
       </nav>
 
       {/* ── Interactive AI Chef Chatbot ── */}
+      <DietaryPassportModal
+        open={isPassportOpen}
+        onOpenChange={(open) => {
+          setIsPassportOpen(open)
+          if (!open && customer) {
+            sessionStorage.setItem(`dova_dietary_onboarding_seen_${customer.customer_id}`, 'true')
+          }
+        }}
+        passport={passportQuery.data}
+        allergens={allergenQuery.data ?? []}
+        displayName={customer?.display_name}
+        loading={passportQuery.loading}
+        loadError={passportQuery.error?.message ?? null}
+        onRetry={() => {
+          passportQuery.refetch()
+          allergenQuery.refetch()
+        }}
+        onboarding={!passportQuery.data?.structured}
+        onSaved={() => {
+          window.dispatchEvent(new Event('dova:passport-updated'))
+        }}
+        onSaveName={async (display_name) => { await updateProfile({ display_name }) }}
+      />
+
       <DovaChatbot />
     </div>
   )

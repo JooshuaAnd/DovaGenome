@@ -123,12 +123,19 @@ export const SAFETY_LEVELS: Record<SafetyLevel, SafetyLevelMeta> = {
     description: 'Ada allergen kritis yang dikecualikan passport pada menu ini.',
     tone: 'blocked',
   },
+  requires_verification: {
+    level: 'requires_verification',
+    label: 'Perlu Verifikasi',
+    description: 'Recipe/BOM atau risiko kontaminasi silang belum diverifikasi operator.',
+    tone: 'caution',
+  },
 }
 
 export const SAFETY_LEVEL_LIST: SafetyLevelMeta[] = [
   SAFETY_LEVELS.safe,
   SAFETY_LEVELS.caution,
   SAFETY_LEVELS.blocked,
+  SAFETY_LEVELS.requires_verification,
 ]
 
 /** Categories that force steril protocols in the kitchen; preference does not. */

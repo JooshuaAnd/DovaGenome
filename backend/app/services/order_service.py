@@ -101,7 +101,7 @@ def validate_selections(
     package: Any,
     *,
     schedule_days: list[str] | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """
     Ubah pilihan `{hari, menu_id}` menjadi `{hari, menu_id, nama_menu}` yang valid.
 
@@ -119,7 +119,7 @@ def validate_selections(
     wanted_days = schedule_days or package.days
 
     if not selections:
-        out: list[dict[str, str]] = []
+        out: list[dict[str, Any]] = []
         for day in wanted_days:
             options = catalog_repo.get_day_options(day, package_code=package.code)
             if not options:
@@ -127,7 +127,13 @@ def validate_selections(
                     f"Belum ada menu yang tersedia untuk hari {day}.",
                     details={"package_code": package.code, "hari": day},
                 )
-            out.append({"hari": day, "menu_id": options[0].menu_id, "nama_menu": options[0].nama_menu})
+            out.append({
+                "hari": day,
+                "menu_id": options[0].menu_id,
+                "nama_menu": options[0].nama_menu,
+                "quantity": 1,
+                "meal_slot": "lunch",
+            })
         return out
 
     out = []
@@ -166,20 +172,48 @@ def validate_selections(
                 },
             )
 
-        out.append({"hari": item.hari, "menu_id": menu.menu_id, "nama_menu": menu.nama_menu})
+        out.append({
+            "hari": item.hari,
+            "menu_id": menu.menu_id,
+            "nama_menu": menu.nama_menu,
+            "quantity": item.quantity,
+            "meal_slot": item.meal_slot,
+        })
 
     # Urut sesuai kalender layanan supaya dokumen tersimpan rapi dan timeline rapi.
-    out.sort(key=lambda s: DAYS.index(s["hari"]))
+    slot_order = {"breakfast": 0, "lunch": 1, "dinner": 2}
+    out.sort(key=lambda s: (DAYS.index(s["hari"]), slot_order.get(s.get("meal_slot", "lunch"), 1)))
     return out
 
 
-def _stored_selections(resolved: list[dict[str, str]]) -> list[dict[str, str]]:
+def _stored_selections(resolved: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Buang `nama_menu` sebelum ditulis — katalog adalah sumber nama, bukan order."""
-    return [{"hari": s["hari"], "menu_id": s["menu_id"]} for s in resolved]
+    return [
+        {
+            "hari": s["hari"],
+            "menu_id": s["menu_id"],
+            "quantity": int(s.get("quantity") or 1),
+            "meal_slot": s.get("meal_slot") or "lunch",
+        }
+        for s in resolved
+    ]
+
+
+def _selection_lookup(
+    selections: list[dict[str, Any]],
+) -> dict[str, str | list[str]]:
+    """Kelompokkan semua menu terpilih per hari untuk pemeriksaan keamanan."""
+    grouped: dict[str, list[str]] = {}
+    for item in selections:
+        grouped.setdefault(item["hari"], []).append(item["menu_id"])
+    return {
+        day: menu_ids[0] if len(menu_ids) == 1 else menu_ids
+        for day, menu_ids in grouped.items()
+    }
 
 
 def enrich_selections(
-    stored: list[dict[str, str]], *, level_by_day: dict[str, str] | None = None
+    stored: list[dict[str, Any]], *, level_by_day: dict[str, str] | None = None
 ) -> list[OrderSelectionOut]:
     """
     Ubah `{hari, menu_id}` tersimpan menjadi DTO siap tampil.
@@ -204,6 +238,8 @@ def enrich_selections(
             OrderSelectionOut(
                 hari=day,
                 menu_id=item["menu_id"],
+                quantity=int(item.get("quantity") or 1),
+                meal_slot=str(item.get("meal_slot") or "lunch"),
                 service_date=service_date,
                 date_label=format_service_date(service_date),
                 nama_menu=(menu.nama_menu if menu else item.get("nama_menu", "")) or "—",
@@ -239,6 +275,20 @@ def resolve_service_menu(order: dict[str, Any], day: str | None) -> Any:
     return catalog_repo.primary_menu_by_day().get(day)
 
 
+def resolve_service_menu_slot(order: dict[str, Any], day: str | None, meal_slot: str = "lunch") -> Any:
+    """Resolve the menu for one day/meal slot, preserving legacy lunch rows."""
+    if not day:
+        return None
+    raw = order.get("menu_selections") or []
+    for item in raw:
+        if isinstance(item, dict) and item.get("hari") == day and str(item.get("meal_slot") or "lunch") == meal_slot:
+            try:
+                return catalog_repo.get_menu(str(item.get("menu_id") or ""))
+            except NotFoundError:
+                break
+    return resolve_service_menu(order, day)
+
+
 def selection_map_of(order: dict[str, Any]) -> dict[str, str]:
     """`hari -> menu_id` dari order yang sudah dinormalisasi (atau dokumen mentah)."""
     raw = order.get("menu_selections") or []
@@ -263,7 +313,7 @@ def build_safety_report(
     package_days: list[str],
     schedule_days: list[str],
     passport: PassportOut | None,
-    selections: dict[str, str] | None = None,
+    selections: dict[str, str | list[str]] | None = None,
     notes: str = "",
 ) -> SafetyReportOut:
     return safety_service.build_report(
@@ -311,7 +361,7 @@ def create_order(
     """
     Buat pesanan mingguan + tiket dapur.
 
-    Setiap hari layanan yang dilayani harus punya SATU opsi menu yang dipilih.
+    Setiap hari layanan dapat memiliki satu atau beberapa baris menu yang dipilih.
     Bila `payload.selections` kosong, opsi utama tiap hari dipakai — ini yang
     membuat pemanggil lama (Telegram, `verify_phase2.py`) tetap bekerja.
 
@@ -333,8 +383,8 @@ def create_order(
     resolved = validate_selections(
         payload.selections, package, schedule_days=requested_days
     )
-    selection_map = {s["hari"]: s["menu_id"] for s in resolved}
-    schedule = [s["hari"] for s in resolved]
+    selection_map = _selection_lookup(resolved)
+    schedule = list(dict.fromkeys(s["hari"] for s in resolved))
 
     passport = _passport_context(customer, payload.apply_passport)
     report = build_safety_report(
@@ -346,10 +396,13 @@ def create_order(
         notes=payload.customer_note,
     )
 
-    if report.level == SafetyLevel.BLOCKED:
+    if report.level in {
+        SafetyLevel.BLOCKED,
+        SafetyLevel.REQUIRES_VERIFICATION,
+    }:
         log.info(
-            "order_rejected customer=%s reason=allergen_conflict codes=%s",
-            customer.customer_id, report.critical_codes,
+            "order_rejected customer=%s reason=safety_gate level=%s codes=%s",
+            customer.customer_id, report.level.value, report.critical_codes,
         )
         raise ConflictError(
             report.headline + " " + report.explanation + " " + report.guidance,
@@ -384,7 +437,7 @@ def create_order(
             if passport and passport.avoided_times
             else _legacy_avoided_for(customer.telegram_chat_id)
         ),
-        "meal_count": len(schedule),
+        "meal_count": sum(int(s.get("quantity") or 1) for s in resolved),
         "status": OrderStatus.PENDING.value,
         "payment_status": "UNPAID",
         "subtotal": package.price or 0,
@@ -524,7 +577,7 @@ def get_order_detail(
         selected_codes=enriched["selected_allergens"],
         passport=passport,
         schedule_days=order["schedule_days"] or list(DAYS),
-        selections={s["hari"]: s["menu_id"] for s in stored} or None,
+        selections=_selection_lookup(stored) or None,
         customer_note=enriched["customer_note"],
     )
 
@@ -568,7 +621,7 @@ def update_order(
     codes = order["selected_allergens"]
     days = order["schedule_days"]
     stored = order["menu_selections"]
-    selection_map = {s["hari"]: s["menu_id"] for s in stored}
+    selection_map = _selection_lookup(stored)
     package = catalog_repo.get_package(order["package_code"])
 
     if payload.selected_allergen_codes is not None:
@@ -595,15 +648,15 @@ def update_order(
             stored = _stored_selections(resolved)
             fields["menu_selections"] = stored
             fields["meal_count"] = len(days)
-            selection_map = {s["hari"]: s["menu_id"] for s in stored}
+            selection_map = _selection_lookup(stored)
 
     if payload.selections is not None:
         resolved = validate_selections(payload.selections, package, schedule_days=days)
         stored = _stored_selections(resolved)
         fields["menu_selections"] = stored
-        selection_map = {s["hari"]: s["menu_id"] for s in stored}
-        fields["schedule_days"] = [s["hari"] for s in stored]
-        fields["meal_count"] = len(stored)
+        selection_map = _selection_lookup(stored)
+        fields["schedule_days"] = list(dict.fromkeys(s["hari"] for s in stored))
+        fields["meal_count"] = sum(int(s.get("quantity") or 1) for s in stored)
         days = fields["schedule_days"]
 
     if payload.customer_note is not None:
@@ -626,7 +679,10 @@ def update_order(
         selections=selection_map or None,
         customer_note=str(fields.get("customer_note", order["customer_note"])),
     )
-    if report.level == SafetyLevel.BLOCKED:
+    if report.level in {
+        SafetyLevel.BLOCKED,
+        SafetyLevel.REQUIRES_VERIFICATION,
+    }:
         raise ConflictError(
             report.headline + " " + report.explanation,
             details={"blocked_days": [d.hari for d in report.per_day if not d.is_recommended]},
@@ -669,6 +725,11 @@ def advance_status(
 
     if target == current["status"]:
         return get_order_detail(order_id=current["order_id"], is_staff=True)
+
+    if target == OrderStatus.PREPARING.value and current.get("payment_status") != "PAID":
+        raise ConflictError(
+            "Pesanan belum lunas. Tiket dapur hanya dapat dimulai setelah pembayaran terverifikasi."
+        )
 
     is_admin = role == Role.ADMIN.value
     if target == OrderStatus.CANCELLED.value:

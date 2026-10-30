@@ -12,6 +12,7 @@ import type {
 export interface AiConfig {
   provider: string
   configured: boolean
+  ai_mode: 'required_langflow' | 'allow_explicit_fallback' | 'disabled'
   flow_id_set: boolean
   telegram_bot_username: string
   checked_at: string

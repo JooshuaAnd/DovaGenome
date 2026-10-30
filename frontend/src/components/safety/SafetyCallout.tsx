@@ -38,7 +38,7 @@ export function SafetyCallout({
 
   return (
     <div
-      role={level === 'blocked' ? 'alert' : 'status'}
+      role={level === 'blocked' || level === 'requires_verification' ? 'alert' : 'status'}
       className={cn(
         'rounded-xl border border-l-4 p-4 sm:p-5',
         tone.surface,

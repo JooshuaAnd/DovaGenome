@@ -7,7 +7,7 @@
    DovaGenome — Design Tokens
    --------------------------------------------------------------------------
    Derived from the Streamlit design reference (theme.py) and refined into a
-   cohesive product palette: warm neutral canvas, ONE confident forest accent,
+   cohesive product palette: warm neutral canvas, ONE confident brick-red accent,
    gold restricted to secondary highlights, and a dedicated semantic safety
    scale (safe / caution / blocked) because cross-contamination status is the
    core domain concept of this product.
@@ -27,21 +27,21 @@
   --line-strong: #cfcbbe;
 
   /* ── Ink & Typography ─────────────────────────────────────────────────── */
-  --fg-strong: #14213d; /* Deep Luxury Navy #14213D */
-  --fg: #3b465c; /* Soft Slate #3B465C */
-  --fg-muted: #5b6475; /* Readable secondary #5B6475 */
-  --fg-subtle: #8a94a6;
+  --fg-strong: #2d191a;
+  --fg: #514040;
+  --fg-muted: #756462;
+  --fg-subtle: #9a8581;
 
-  /* ── Brand: Deep Obsidian Navy (replaces raw forest with modern elegance) ── */
-  --forest-950: #0a1120;
-  --forest-900: #14213d; /* Primary Brand Navy #14213D */
-  --forest-800: #1b2c4e;
-  --forest-700: #223762; /* FOREST_700 active navy */
-  --forest-600: #2d477c;
-  --forest-500: #3d5e9f;
-  --forest-300: #8ea8db;
-  --forest-100: #e2e8f5;
-  --forest-50: #f1f4fb;
+  /* ── Brand: brick red on warm cream ── */
+  --forest-950: #3c1018;
+  --forest-900: #711f2b;
+  --forest-800: #8a2833;
+  --forest-700: #a5393d;
+  --forest-600: #bd4e49;
+  --forest-500: #d16b5e;
+  --forest-300: #e7a294;
+  --forest-100: #f5ded6;
+  --forest-50: #fcf0eb;
 
   /* ── Brand: warm amber & gold (luxury secondary accent) ──────────────── */
   --gold-700: #936e2f;
@@ -123,20 +123,20 @@
   --line: #2f3640; /* Dark border #2F3640 */
   --line-strong: #3f4856;
 
-  --fg-strong: #f1f3f7; /* Crisp white-silver #F1F3F7 */
-  --fg: #c4cdd8;
-  --fg-muted: #a3abba;
-  --fg-subtle: #737e91;
+  --fg-strong: #f7eeea;
+  --fg: #ddc9c3;
+  --fg-muted: #bca6a0;
+  --fg-subtle: #8f7773;
 
-  --forest-950: #090e18;
-  --forest-900: #15223c;
-  --forest-800: #1d2e50;
-  --forest-700: #29406e;
-  --forest-600: #385694;
-  --forest-500: #4f73bd;
-  --forest-300: #88a4db;
-  --forest-100: #1e283d;
-  --forest-50: #161e2e;
+  --forest-950: #21090e;
+  --forest-900: #4d151e;
+  --forest-800: #65202a;
+  --forest-700: #8a3037;
+  --forest-600: #ab4748;
+  --forest-500: #c76c63;
+  --forest-300: #9e6260;
+  --forest-100: #382127;
+  --forest-50: #29181d;
 
   --gold-700: #d9ae63;
   --gold-600: #e2bd7e;
@@ -401,6 +401,15 @@
 }
 
 @layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Uppercase micro-label for eyebrows and table headers. */
   .eyebrow {
     @apply text-[0.6875rem] font-extrabold tracking-[0.18em] text-forest-600 uppercase;

@@ -4,6 +4,7 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  FileText,
   LayoutDashboard,
   MessageSquare,
   Package,
@@ -24,86 +25,25 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
-import { supplierService, type SupplierPO, type SupplierItem } from '@/services/supplier'
-
-const DEFAULT_CATALOG_ITEMS: SupplierItem[] = [
-  { id: 1, supplier_id: 'sup_daging_nusantara', item_name: 'Fillet Dada Ayam Organik', unit: 'kg', price_per_unit: 45000, moq: 5, supplier_name: 'CV Daging Segar Nusantara (Pak Hadi)', is_available: true },
-  { id: 2, supplier_id: 'sup_daging_nusantara', item_name: 'Daging Sapi Has Dalam (Tenderloin)', unit: 'kg', price_per_unit: 130000, moq: 3, supplier_name: 'CV Daging Segar Nusantara (Pak Hadi)', is_available: true },
-  { id: 3, supplier_id: 'sup_sayur_lembang', item_name: 'Brokoli Organik Segar', unit: 'kg', price_per_unit: 25000, moq: 5, supplier_name: 'Tani Organik Lembang (Ibu Ningsih)', is_available: true },
-  { id: 4, supplier_id: 'sup_sayur_lembang', item_name: 'Ubi Madu Cilembu', unit: 'kg', price_per_unit: 18000, moq: 10, supplier_name: 'Tani Organik Lembang (Ibu Ningsih)', is_available: true },
-  { id: 5, supplier_id: 'sup_sayur_lembang', item_name: 'Jamur Tiram & Shiitake', unit: 'kg', price_per_unit: 32000, moq: 3, supplier_name: 'Tani Organik Lembang (Ibu Ningsih)', is_available: true },
-  { id: 6, supplier_id: 'sup_muara_baru', item_name: 'Udang Windu Segar (Size 30)', unit: 'kg', price_per_unit: 115000, moq: 3, supplier_name: 'Muara Baru Seafood Mandiri (Pak Johan)', is_available: true },
-  { id: 7, supplier_id: 'sup_muara_baru', item_name: 'Fillet Ikan Kakap Merah', unit: 'kg', price_per_unit: 85000, moq: 5, supplier_name: 'Muara Baru Seafood Mandiri (Pak Johan)', is_available: true },
-  { id: 8, supplier_id: 'sup_muara_baru', item_name: 'Salmon Segar Norwegia', unit: 'kg', price_per_unit: 240000, moq: 2, supplier_name: 'Muara Baru Seafood Mandiri (Pak Johan)', is_available: true },
-]
-
-const DEFAULT_SUPPLIER_POS: SupplierPO[] = [
-  {
-    po_id: 'PO-20261011-001',
-    supplier_id: 'sup_daging_nusantara',
-    supplier_name: 'CV Daging Segar Nusantara (Pak Hadi)',
-    supplier_phone: '+6281326332247',
-    category: 'Daging & Unggas',
-    email: 'hadi.daging@dovasuplier.com',
-    status: 'SENT',
-    total_amount: 675000,
-    need_by_date: '2026-10-12',
-    notes: 'Pengiriman H-1 sebelum masak.',
-    created_at: '2026-10-11T12:37:23Z',
-    items: [
-      { id: 1, item_name: 'Fillet Dada Ayam Organik', qty: 15, unit: 'kg', unit_price: 45000, subtotal: 675000 },
-    ],
-  },
-  {
-    po_id: 'PO-20261011-002',
-    supplier_id: 'sup_sayur_lembang',
-    supplier_name: 'Tani Organik Lembang (Ibu Ningsih)',
-    supplier_phone: '+6285866408193',
-    category: 'Sayur & Nabati',
-    email: 'ningsih.tani@lembangfresh.com',
-    status: 'ACCEPTED',
-    total_amount: 340000,
-    need_by_date: '2026-10-12',
-    notes: 'Kirim subuh pukul 05:00 WIB.',
-    created_at: '2026-10-11T12:37:24Z',
-    items: [
-      { id: 2, item_name: 'Brokoli Organik Segar', qty: 10, unit: 'kg', unit_price: 25000, subtotal: 250000 },
-      { id: 3, item_name: 'Ubi Madu Cilembu', qty: 5, unit: 'kg', unit_price: 18000, subtotal: 90000 },
-    ],
-  },
-  {
-    po_id: 'PO-20261011-003',
-    supplier_id: 'sup_muara_baru',
-    supplier_name: 'Muara Baru Seafood Mandiri (Pak Johan)',
-    supplier_phone: '+6281900112233',
-    category: 'Ikan & Seafood',
-    email: 'johan.seafood@muarabaru.id',
-    status: 'DRAFT',
-    total_amount: 585000,
-    need_by_date: '2026-10-12',
-    notes: 'Menunggu konfirmasi admin untuk menu Kamis.',
-    created_at: '2026-10-11T12:37:24Z',
-    items: [
-      { id: 4, item_name: 'Udang Windu Segar', qty: 3, unit: 'kg', unit_price: 115000, subtotal: 345000 },
-      { id: 5, item_name: 'Fillet Ikan Kakap Merah', qty: 2, unit: 'kg', unit_price: 85000, subtotal: 170000 },
-    ],
-  },
-]
+import { supplierService, type SupplierInvoice, type SupplierPO, type SupplierItem } from '@/services/supplier'
 
 export function SupplierPage() {
   const { customer, logout } = useAuth()
   void customer
   void logout
   const [loading, setLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'pos' | 'catalog' | 'performance' | 'forecast'>('pos')
+  const [activeTab, setActiveTab] = useState<'pos' | 'invoices' | 'catalog' | 'performance' | 'forecast'>('pos')
 
   // PO & Catalog State (Initialized with verified defaults)
-  const [pos, setPos] = useState<SupplierPO[]>(DEFAULT_SUPPLIER_POS)
-  const [catalogItems, setCatalogItems] = useState<SupplierItem[]>(DEFAULT_CATALOG_ITEMS)
+  // Supplier data must come from the authenticated API. Legacy demo constants
+  // remain in this file for reference only and are never rendered as fallback.
+  const [pos, setPos] = useState<SupplierPO[]>([])
+  const [catalogItems, setCatalogItems] = useState<SupplierItem[]>([])
+  const [invoices, setInvoices] = useState<SupplierInvoice[]>([])
   const [summary, setSummary] = useState({
-    total_pos: 3,
-    pending_pos: 2,
-    accepted_pos: 1,
+    total_pos: 0,
+    pending_pos: 0,
+    accepted_pos: 0,
     suppliers: [] as any[],
   })
   const [forecastData, setForecastData] = useState<any>(null)
@@ -113,20 +53,34 @@ export function SupplierPage() {
 
   // Modal response
   const [selectedPoForAction, setSelectedPoForAction] = useState<SupplierPO | null>(null)
+  const [selectedPoForReceipt, setSelectedPoForReceipt] = useState<SupplierPO | null>(null)
+  const [receiptQuantities, setReceiptQuantities] = useState<Record<number, string>>({})
+  const [receiptKey, setReceiptKey] = useState('')
   const [responseNotes, setResponseNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [invoiceForm, setInvoiceForm] = useState({
+    invoice_number: '',
+    payment_terms: 'PAY_ON_DELIVERY' as 'PAY_ON_DELIVERY' | 'WEEKLY_INVOICE',
+    amount: '',
+    due_date: new Date().toISOString().slice(0, 10),
+    po_id: '',
+    period_start: '',
+    period_end: '',
+  })
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [posData, catData, sumData, foreData] = await Promise.all([
+      const [posData, catData, sumData, foreData, invoiceData] = await Promise.all([
         supplierService.getPos(selectedSupplierId || undefined).catch(() => []),
         supplierService.getCatalog(selectedSupplierId || undefined).catch(() => []),
         supplierService.getSummary().catch(() => null),
         supplierService.getDemandForecast().catch(() => null),
+        supplierService.getInvoices().catch(() => []),
       ])
       setPos(posData)
       setCatalogItems(catData)
+      setInvoices(invoiceData)
       if (sumData) {
         setSummary({
           total_pos: sumData.total_pos,
@@ -135,9 +89,16 @@ export function SupplierPage() {
           suppliers: sumData.suppliers,
         })
       }
-      if (foreData) {
-        setForecastData(foreData)
-      }
+      const trustedForecast =
+        foreData &&
+        foreData.data_mode === 'live' &&
+        foreData.source === 'supabase_postgres' &&
+        foreData.calculation_version === 'forecast_backtest_v2' &&
+        foreData.status === 'OK' &&
+        typeof foreData.peak_day === 'string' &&
+        Array.isArray(foreData.supplier_7d_forecast) &&
+        Array.isArray(foreData.top_dishes)
+      setForecastData(trustedForecast ? foreData : null)
     } catch {
       toast.error('Gagal memuat data portal supplier.')
     } finally {
@@ -170,6 +131,85 @@ export function SupplierPage() {
     }
   }
 
+  const openReceipt = (po: SupplierPO) => {
+    setSelectedPoForReceipt(po)
+    setReceiptKey(`receipt:${po.po_id}:${Date.now()}`)
+    setReceiptQuantities(
+      Object.fromEntries(
+        po.items.map((item) => [item.id, String(Math.max(0, item.qty - (item.received_qty || 0)))])
+      )
+    )
+  }
+
+  const handleReceivePo = async () => {
+    if (!selectedPoForReceipt) return
+    setIsSubmitting(true)
+    try {
+      const lines = selectedPoForReceipt.items
+        .map((item) => ({
+          po_item_id: item.id,
+          quantity: Number(receiptQuantities[item.id] || 0),
+          unit: item.unit,
+        }))
+        .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0)
+      if (!lines.length) {
+        toast.error('Isi minimal satu jumlah barang yang diterima.')
+        return
+      }
+      const result = await supplierService.receivePo(
+        selectedPoForReceipt.po_id,
+        { lines, notes: responseNotes },
+        receiptKey
+      )
+      toast.success(`Goods receipt ${result.receipt_id} tercatat. Stok Supabase sudah diperbarui.`)
+      setSelectedPoForReceipt(null)
+      setResponseNotes('')
+      await fetchData()
+    } catch {
+      toast.error('Goods receipt belum dapat diposting. Periksa status PO dan migration Supabase.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleSubmitInvoice = async () => {
+    const amount = Number(invoiceForm.amount)
+    if (!invoiceForm.invoice_number.trim() || !Number.isFinite(amount) || amount <= 0 || !invoiceForm.due_date) {
+      toast.error('Nomor invoice, nilai tagihan, dan jatuh tempo wajib diisi.')
+      return
+    }
+    if (invoiceForm.payment_terms === 'PAY_ON_DELIVERY' && !invoiceForm.po_id.trim()) {
+      toast.error('PAY_ON_DELIVERY wajib memilih PO yang sudah diterima.')
+      return
+    }
+    if (invoiceForm.payment_terms === 'WEEKLY_INVOICE' && (!invoiceForm.period_start || !invoiceForm.period_end)) {
+      toast.error('WEEKLY_INVOICE wajib memiliki periode awal dan akhir.')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      const result = await supplierService.submitInvoice(
+        {
+          invoice_number: invoiceForm.invoice_number.trim(),
+          payment_terms: invoiceForm.payment_terms,
+          amount,
+          due_date: invoiceForm.due_date,
+          po_id: invoiceForm.po_id.trim() || undefined,
+          period_start: invoiceForm.period_start || undefined,
+          period_end: invoiceForm.period_end || undefined,
+        },
+        `invoice:${invoiceForm.invoice_number.trim()}`,
+      )
+      toast.success(`Invoice ${result.invoice_number} masuk review admin (${result.match_status}).`)
+      setInvoiceForm((current) => ({ ...current, invoice_number: '', amount: '', po_id: '' }))
+      await fetchData()
+    } catch {
+      toast.error('Invoice belum dapat diajukan. Pastikan goods receipt dan migration billing sudah aktif.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const filteredPos = pos.filter(
     (p) =>
       p.po_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -178,7 +218,7 @@ export function SupplierPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-stone-900 font-sans flex flex-col md:flex-row antialiased">
+    <div className="min-h-screen bg-[#f6f7fb] text-slate-950 font-sans flex flex-col md:flex-row antialiased">
       {/* ── 1. Left Persistent Sidebar (Consistent Dova Style) ──────────────── */}
       <aside className="w-full md:w-64 bg-white border-r border-stone-200/80 flex flex-col justify-between shrink-0 shadow-2xs z-20">
         <div>
@@ -217,6 +257,19 @@ export function SupplierPage() {
                   {summary.pending_pos}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('invoices')}
+              className={cn(
+                'w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all text-left',
+                activeTab === 'invoices'
+                  ? 'bg-amber-400 text-stone-950 font-bold shadow-sm'
+                  : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+              )}
+            >
+              <FileText className="size-5" />
+              <span>Invoice & Tagihan</span>
             </button>
 
             <button
@@ -361,9 +414,9 @@ export function SupplierPage() {
             <div className="space-y-1">
               <p className="text-xs font-semibold text-stone-500">Rating Kualitas</p>
               <h2 className="text-3xl font-black text-amber-500 flex items-center gap-1">
-                4.90 <span className="text-base text-stone-400">/5</span>
+                —
               </h2>
-              <p className="text-[11px] text-stone-400">Grade A (Presisi Higienis)</p>
+              <p className="text-[11px] text-stone-400">Belum ada metrik kualitas live</p>
             </div>
             <div className="size-11 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500">
               <Star className="size-5 fill-amber-500" />
@@ -399,8 +452,8 @@ export function SupplierPage() {
             {/* List PO Cards */}
             <div className="space-y-4">
               {filteredPos.map((po) => {
-                const isSent = po.status === 'SENT' || po.status === 'PENDING_APPROVAL'
-                const isAcknowledged = po.status === 'ACKNOWLEDGED'
+                const isSent = po.status === 'SENT'
+                const isAcknowledged = po.status === 'ACKNOWLEDGED' || po.status === 'ACCEPTED'
                 const isReceived = po.status === 'RECEIVED'
                 const isRejected = po.status === 'REJECTED'
 
@@ -461,7 +514,7 @@ export function SupplierPage() {
                             <Button
                               size="sm"
                               onClick={() => {
-                                setSelectedPoForAction(po)
+                                openReceipt(po)
                               }}
                               className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
                             >
@@ -514,6 +567,42 @@ export function SupplierPage() {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'invoices' && (
+          <div className="space-y-5">
+            <div className="bg-white rounded-3xl p-6 border border-stone-200/90 shadow-2xs space-y-4">
+              <div>
+                <h3 className="font-extrabold text-lg text-stone-900">Ajukan Invoice Supplier</h3>
+                <p className="text-xs text-stone-500">Invoice tidak otomatis lunas. Admin akan memeriksa PO, goods receipt, dan nilai tagihan.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input value={invoiceForm.invoice_number} onChange={(event) => setInvoiceForm((current) => ({ ...current, invoice_number: event.target.value }))} placeholder="Nomor invoice supplier" className="rounded-xl" />
+                <Input type="number" min="1" value={invoiceForm.amount} onChange={(event) => setInvoiceForm((current) => ({ ...current, amount: event.target.value }))} placeholder="Nilai tagihan (IDR)" className="rounded-xl" />
+                <select value={invoiceForm.payment_terms} onChange={(event) => setInvoiceForm((current) => ({ ...current, payment_terms: event.target.value as 'PAY_ON_DELIVERY' | 'WEEKLY_INVOICE' }))} className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs">
+                  <option value="PAY_ON_DELIVERY">PAY_ON_DELIVERY</option>
+                  <option value="WEEKLY_INVOICE">WEEKLY_INVOICE</option>
+                </select>
+                <Input type="date" value={invoiceForm.due_date} onChange={(event) => setInvoiceForm((current) => ({ ...current, due_date: event.target.value }))} className="rounded-xl" />
+                {invoiceForm.payment_terms === 'PAY_ON_DELIVERY' ? (
+                  <select value={invoiceForm.po_id} onChange={(event) => setInvoiceForm((current) => ({ ...current, po_id: event.target.value }))} className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs md:col-span-2">
+                    <option value="">Pilih PO RECEIVED</option>
+                    {pos.filter((po) => po.status === 'RECEIVED').map((po) => <option key={po.po_id} value={po.po_id}>{po.po_id} · Rp {(po.total_amount || 0).toLocaleString('id-ID')}</option>)}
+                  </select>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 md:col-span-2">
+                    <Input type="date" value={invoiceForm.period_start} onChange={(event) => setInvoiceForm((current) => ({ ...current, period_start: event.target.value }))} aria-label="Periode awal" />
+                    <Input type="date" value={invoiceForm.period_end} onChange={(event) => setInvoiceForm((current) => ({ ...current, period_end: event.target.value }))} aria-label="Periode akhir" />
+                  </div>
+                )}
+              </div>
+              <Button onClick={() => void handleSubmitInvoice()} disabled={isSubmitting} className="rounded-full bg-amber-400 text-stone-950 hover:bg-amber-500 font-bold">{isSubmitting ? 'Mengirim...' : 'Ajukan Invoice untuk Review'}</Button>
+            </div>
+            <div className="bg-white rounded-3xl p-6 border border-stone-200/90 shadow-2xs space-y-4">
+              <h3 className="font-extrabold text-lg text-stone-900">Riwayat Invoice</h3>
+              {!invoices.length ? <p className="rounded-2xl border border-dashed border-stone-200 p-5 text-sm text-stone-500">Belum ada invoice supplier yang terdaftar.</p> : invoices.map((invoice) => <div key={invoice.supplier_invoice_id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 p-4"><div><p className="font-bold text-stone-900">{invoice.invoice_number} <Badge className="ml-2 bg-stone-100 text-stone-700 border-none">{invoice.status}</Badge></p><p className="text-xs text-stone-500">{invoice.payment_terms} · PO {invoice.po_ids.join(', ') || '-'} · jatuh tempo {invoice.due_date}</p></div><div className="text-right"><p className="font-black text-emerald-700">Rp {invoice.amount.toLocaleString('id-ID')}</p><p className={cn('text-[11px] font-bold', invoice.match_status === 'MATCHED' ? 'text-emerald-600' : 'text-amber-600')}>{invoice.match_status} · expected Rp {invoice.expected_amount.toLocaleString('id-ID')}</p></div></div>)}
             </div>
           </div>
         )}
@@ -579,20 +668,20 @@ export function SupplierPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
                 <p className="text-xs font-bold text-stone-700">Ketepatan Waktu (On-Time Delivery)</p>
-                <h4 className="text-2xl font-black text-emerald-700">98.4%</h4>
-                <p className="text-[11px] text-stone-500">Rata-rata lead time pengantaran: 1.2 hari.</p>
+                <h4 className="text-2xl font-black text-stone-500">—</h4>
+                <p className="text-[11px] text-stone-500">Belum ada metrik delivery live yang cukup.</p>
               </div>
 
               <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
                 <p className="text-xs font-bold text-stone-700">Kepatuhan Higienitas & Mutu</p>
-                <h4 className="text-2xl font-black text-amber-600">100% Lolos</h4>
-                <p className="text-[11px] text-stone-500">Nol insiden kontaminasi alergen silang di gudang.</p>
+                <h4 className="text-2xl font-black text-stone-500">—</h4>
+                <p className="text-[11px] text-stone-500">Belum ada hasil inspeksi mutu live.</p>
               </div>
 
               <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
                 <p className="text-xs font-bold text-stone-700">Tingkat Pemenuhan PO (Fulfillment)</p>
-                <h4 className="text-2xl font-black text-teal-700">99.1%</h4>
-                <p className="text-[11px] text-stone-500">Kuantitas sesuai faktur pesanan dapur.</p>
+                <h4 className="text-2xl font-black text-stone-500">—</h4>
+                <p className="text-[11px] text-stone-500">Menunggu histori goods receipt yang terverifikasi.</p>
               </div>
             </div>
           </div>
@@ -600,7 +689,8 @@ export function SupplierPage() {
 
         {/* ── TAB 4: PREDIKSI DEMAND AI & PROYEKSI BAHAN ──────────────────────── */}
         {activeTab === 'forecast' && (
-          <div className="space-y-6">
+          forecastData ? (
+            <div className="space-y-6">
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-[#0D4738] text-white p-5 rounded-3xl shadow-md space-y-1">
@@ -609,10 +699,10 @@ export function SupplierPage() {
                   <TrendingUp className="size-4" />
                 </div>
                 <h3 className="text-2xl font-black text-amber-300">
-                  Hari {forecastData?.peak_day || 'Jumat'} 🔥
+                  Hari {forecastData.peak_day}
                 </h3>
                 <p className="text-[11px] text-emerald-200">
-                  Volume pesanan katering melonjak +32%. Siapkan pasokan lebih awal!
+                  Ringkasan berasal dari payload forecast live yang terverifikasi.
                 </p>
               </div>
 
@@ -621,9 +711,9 @@ export function SupplierPage() {
                   <span>Model Peramalan</span>
                   <Sparkles className="size-4 text-amber-500" />
                 </div>
-                <h3 className="text-2xl font-black text-stone-900">Linear ML & 7D MA</h3>
+                <h3 className="text-2xl font-black text-stone-900">Forecast live</h3>
                 <p className="text-[11px] text-stone-500">
-                  Sinkronisasi real-time dari 1.000 transaksi pesanan lunas
+                  Method dan provenance mengikuti kontrak backend.
                 </p>
               </div>
 
@@ -632,9 +722,9 @@ export function SupplierPage() {
                   <span>Tingkat Kesiapan Pasokan</span>
                   <CheckCircle2 className="size-4 text-emerald-600" />
                 </div>
-                <h3 className="text-2xl font-black text-emerald-600">Optimal (95% CI)</h3>
+                <h3 className="text-2xl font-black text-emerald-600">Status terverifikasi</h3>
                 <p className="text-[11px] text-stone-500">
-                  Perhitungan Safety Stock & Reorder Point terkalibrasi otomatis
+                  Angka supply chain hanya tampil setelah gate BOM dan inventory lulus.
                 </p>
               </div>
             </div>
@@ -668,7 +758,7 @@ export function SupplierPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100 font-sans">
-                    {(forecastData?.supplier_7d_forecast || []).map((item: any, idx: number) => (
+                    {forecastData.supplier_7d_forecast.map((item: any, idx: number) => (
                       <tr key={idx} className="hover:bg-stone-50/60">
                         <td className="py-3 px-3 font-bold text-stone-900">
                           {item.material}
@@ -719,12 +809,12 @@ export function SupplierPage() {
                   Menu Katering Terlaris dengan Konsumsi Bahan Tertinggi
                 </h3>
                 <p className="text-xs text-stone-500">
-                  Data 1.000 pesanan menunjukkan hidangan berikut mendominasi kebutuhan dapur.
+                  Data menu berasal dari payload forecast live yang terverifikasi.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {(forecastData?.top_dishes || []).slice(0, 4).map((d: any) => (
+                {forecastData.top_dishes.slice(0, 4).map((d: any) => (
                   <div
                     key={d.menu_id}
                     className="p-4 rounded-2xl border border-stone-200 bg-stone-50 space-y-1.5"
@@ -742,7 +832,17 @@ export function SupplierPage() {
                 ))}
               </div>
             </div>
-          </div>
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 space-y-2">
+              <h3 className="font-extrabold">Forecast supplier belum tersedia</h3>
+              <p>
+                Forecast bahan baku ditahan sampai forecast live, BOM, inventory,
+                unit conversion, dan lead time supplier terverifikasi. Tidak ada
+                angka simulasi yang ditampilkan sebagai pengganti.
+              </p>
+            </div>
+          )
         )}
       </main>
 
@@ -809,11 +909,64 @@ export function SupplierPage() {
                 {isSubmitting ? 'Menyimpan...' : 'Terima PO & Siapkan'}
               </Button>
               <Button
-                onClick={() => handleRespondPo('RECEIVED')}
+                variant="ghost"
+                onClick={() => setSelectedPoForAction(null)}
                 disabled={isSubmitting}
-                className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-5 shadow-sm"
+                className="rounded-full text-xs font-bold text-stone-600"
               >
-                Kirim Sekarang 🚚
+                Tutup
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedPoForReceipt && (
+        <div className="fixed inset-0 z-50 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-lg text-stone-900">Posting Barang Diterima</h3>
+                <p className="text-xs text-stone-500">PO {selectedPoForReceipt.po_id} · partial receipt diperbolehkan</p>
+              </div>
+              <button onClick={() => setSelectedPoForReceipt(null)} className="text-stone-400 hover:text-stone-600">
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {selectedPoForReceipt.items.map((item) => {
+                const remaining = Math.max(0, item.qty - (item.received_qty || 0))
+                return (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200 p-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-stone-800 truncate">{item.item_name}</p>
+                      <p className="text-[11px] text-stone-500">Sisa PO: {remaining} {item.unit}</p>
+                    </div>
+                    <Input
+                      type="number"
+                      min="0"
+                      max={remaining}
+                      step="0.01"
+                      value={receiptQuantities[item.id] || ''}
+                      onChange={(event) => setReceiptQuantities((current) => ({ ...current, [item.id]: event.target.value }))}
+                      className="w-32 rounded-xl text-xs"
+                      aria-label={`Jumlah diterima ${item.item_name}`}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+            <textarea
+              rows={2}
+              value={responseNotes}
+              onChange={(event) => setResponseNotes(event.target.value)}
+              placeholder="Catatan penerimaan, kondisi barang, atau nomor surat jalan"
+              className="w-full rounded-2xl border border-stone-200 p-3 text-xs focus:ring-emerald-400"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setSelectedPoForReceipt(null)} className="rounded-full text-xs font-bold">Batal</Button>
+              <Button onClick={handleReceivePo} disabled={isSubmitting} className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs">
+                {isSubmitting ? 'Memposting...' : 'Post Goods Receipt'}
               </Button>
             </div>
           </div>
